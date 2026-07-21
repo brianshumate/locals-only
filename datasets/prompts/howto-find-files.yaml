@@ -1,0 +1,20 @@
+id: howto-find-files
+title: How to find files by name, size, and age with find
+doc_type: how-to
+audience: Developers and sysadmins comfortable in a Unix shell.
+source_material: |
+  Task-oriented recipes for `find`: by name (`-name`, case-insensitive
+  `-iname`), by type (`-type f` / `-type d`), by size (`-size +10M`), by
+  modification time (`-mtime -7`), combining tests, and acting on results
+  with `-exec ... {} \;` and `-delete` (with a warning to run the match
+  first). Examples must be safe to run in a scratch directory.
+required_sections:
+  - Overview
+  - Find by name
+  - Find by type and size
+  - Find by modification time
+  - Acting on matches
+  - Safety notes
+target_length_words: 700
+requires_code: true
+code_languages: [bash]

@@ -1,0 +1,12 @@
+prompt_id: tut-python-json
+facts:
+  - claim: serialize function
+    truth: "`json.dumps(obj)` returns a JSON string; `json.dump(obj, fp)` writes JSON to a file object."
+  - claim: parse function
+    truth: "`json.loads(s)` parses a JSON string; `json.load(fp)` parses from a file object."
+  - claim: pretty printing
+    truth: "Passing `indent` (e.g. `json.dumps(obj, indent=2)`) pretty-prints the output."
+  - claim: null mapping
+    truth: JSON `null` maps to Python `None`.
+  - claim: object mapping
+    truth: A JSON object maps to a Python `dict`, and a JSON array maps to a Python `list`.

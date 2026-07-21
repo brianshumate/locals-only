@@ -1,0 +1,21 @@
+id: howto-python-csv
+title: How to read and write CSV files with the Python standard library
+doc_type: how-to
+audience: Working Python developers who need quick, correct recipes.
+source_material: |
+  Recipes using the `csv` module only (no pandas): read rows with
+  `csv.reader`, read into dicts with `csv.DictReader` (first row becomes the
+  field names), write with `csv.writer` and `csv.DictWriter` (pass
+  `fieldnames`, call `writeheader()`), always open files with `newline=""`,
+  and handle a custom delimiter. Every example must be self-contained: create
+  its own sample data in a temp file, then read it back.
+required_sections:
+  - Overview
+  - Reading rows
+  - Reading into dictionaries
+  - Writing rows
+  - Writing from dictionaries
+  - Custom delimiters
+target_length_words: 700
+requires_code: true
+code_languages: [python]

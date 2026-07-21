@@ -1,0 +1,19 @@
+id: tut-python-venv
+title: Getting started with Python virtual environments
+doc_type: tutorial
+audience: Developers new to Python who have Python 3 installed and can use a terminal.
+source_material: |
+  Teach creating and using a virtual environment with the standard-library
+  `venv` module on macOS/Linux: create with `python3 -m venv .venv`, activate
+  with `source .venv/bin/activate`, install a package with pip, verify with
+  `pip list`, deactivate with `deactivate`. Explain why isolation matters.
+required_sections:
+  - Introduction
+  - Prerequisites
+  - Creating the environment
+  - Activating and installing packages
+  - Deactivating and cleanup
+  - Summary
+target_length_words: 800
+requires_code: true
+code_languages: [bash]

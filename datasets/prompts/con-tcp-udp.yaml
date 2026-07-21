@@ -1,0 +1,21 @@
+id: con-tcp-udp
+title: "TCP and UDP: how the two transport protocols differ"
+doc_type: conceptual
+audience: Junior backend developers who use HTTP daily but have never looked below it.
+source_material: |
+  Explain what a transport protocol does, then contrast TCP (connection-
+  oriented, three-way handshake SYN/SYN-ACK/ACK, ordered delivery,
+  retransmission, flow control) with UDP (connectionless, no delivery or
+  ordering guarantees, lower latency, smaller 8-byte header vs TCP's minimum
+  20 bytes). Give typical use cases for each (TCP: HTTP, databases; UDP: DNS
+  queries, video streaming, games) and explain why the trade-off exists
+  rather than one being "better".
+required_sections:
+  - Introduction
+  - What a transport protocol does
+  - How TCP works
+  - How UDP works
+  - Choosing between them
+  - Summary
+target_length_words: 800
+requires_code: false

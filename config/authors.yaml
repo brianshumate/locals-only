@@ -1,0 +1,103 @@
+# Author models: each row becomes an `authors` record. Keep temperature/seed
+# explicit so sweeps are just new rows with new ids.
+#
+# Backends: `model`/`quantization` are the LM Studio identity (MacBook Air).
+# A `backends: llamacpp:` entry maps the same author to a gguf file in
+# /mnt/data-one/llama-models for the llama.cpp/Docker backend (Linux server).
+# Authors with no entry for the active backend are skipped on that machine.
+# Note the weights usually differ per backend (mlx/qat vs gguf quant), so
+# cross-platform scores compare *deployments*, not identical weights — the
+# dashboard's environment table shows which machine authored what.
+authors:
+  # LM Studio only — no gguf for these on the Linux server.
+  - id: gemma-4-12b
+    model: google/gemma-4-12b-qat
+    quantization: qat
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  # llama.cpp only — not installed in LM Studio on the Mac.
+  - id: gemma-4-26b
+    backends:
+      llamacpp:
+        model: gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf
+        quantization: qat-UD-Q4_K_XL
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  - id: lfm2.5-8b
+    model: lfm2.5-8b-a1b-mlx
+    quantization: mlx
+    backends:
+      llamacpp:
+        model: LFM2.5-8B-A1B-BF16.gguf
+        quantization: bf16
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  # LM Studio only — no gguf for these on the Linux server.
+  - id: lfm2-24b
+    model: liquid/lfm2-24b-a2b
+    quantization: 6bit
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  - id: nemotron-3-nano-4b
+    model: nvidia/nemotron-3-nano-4b
+    quantization: Q8_0
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  - id: qwen3.5-9b
+    model: qwen3.5-9b-mtp
+    quantization: mtp
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  # llama.cpp only — not installed in LM Studio on the Mac.
+  - id: qwen3.6-27b
+    backends:
+      llamacpp:
+        model: Qwen3.6-27B-MTP-Q4_K_M.gguf
+        quantization: Q4_K_M
+    temperature: 0.7
+    seed: 42
+    # Reasoning model: budget covers the thinking phase plus the document.
+    max_tokens: 32768
+    context_length: 65536
+
+  # llama.cpp only — these gguf models have no LM Studio counterpart
+  # installed on the Mac (and are too large for it anyway).
+  - id: gemma-4-31b
+    backends:
+      llamacpp:
+        model: gemma-4-31B-it-qat-UD-Q4_K_XL.gguf
+        quantization: qat-UD-Q4_K_XL
+    temperature: 0.7
+    seed: 42
+    max_tokens: 32768
+    context_length: 65536
+
+  - id: qwen3.6-35b
+    backends:
+      llamacpp:
+        model: Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf
+        quantization: Q4_K_M
+    temperature: 0.7
+    seed: 42
+    # Reasoning model: budget covers the thinking phase plus the document.
+    max_tokens: 32768
+    context_length: 65536
+

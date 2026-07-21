@@ -1,0 +1,19 @@
+id: ref-chmod
+title: chmod permission notation reference
+doc_type: reference
+audience: Unix users who know what file permissions are but forget the syntax.
+source_material: |
+  Reference for both chmod notations. Symbolic: who (u/g/o/a), operator
+  (+/-/=), permission (r/w/x). Octal: r=4, w=2, x=1 summed per digit, three
+  digits for user/group/other (e.g. 755 = rwxr-xr-x, 644 = rw-r--r--).
+  Include a table mapping common octal modes to their symbolic equivalents
+  and typical use (755 executables/directories, 644 regular files, 600
+  private files, 700 private directories).
+required_sections:
+  - Overview
+  - Symbolic notation
+  - Octal notation
+  - Common modes table
+  - Examples
+target_length_words: 600
+requires_code: false

@@ -1,0 +1,19 @@
+id: ref-http-status
+title: HTTP status code reference
+doc_type: reference
+audience: Web developers who need a lookup table with precise semantics.
+source_material: |
+  Reference for the five status-code classes (1xx informational, 2xx success,
+  3xx redirection, 4xx client error, 5xx server error) and these specific
+  codes: 200, 201, 204, 301, 302, 304, 400, 401, 403, 404, 405, 409, 429,
+  500, 502, 503, 504. For each: name, meaning, and when a server returns it.
+  Note the common 401-vs-403 confusion (401 = unauthenticated, 403 =
+  authenticated but not allowed).
+required_sections:
+  - Overview of status classes
+  - 2xx success codes
+  - 3xx redirection codes
+  - 4xx client error codes
+  - 5xx server error codes
+target_length_words: 900
+requires_code: false

@@ -1,0 +1,12 @@
+prompt_id: tut-git-first-repo
+facts:
+  - claim: init command
+    truth: "`git init` creates a new repository in the current directory, storing metadata in a `.git` subdirectory."
+  - claim: staging command
+    truth: "`git add <file>` stages changes; committing records only staged changes."
+  - claim: commit message flag
+    truth: "`git commit -m \"message\"` creates a commit with the given message."
+  - claim: history command
+    truth: "`git log` shows commit history, newest first."
+  - claim: three areas
+    truth: Git distinguishes the working tree, the staging area (index), and committed history.

@@ -1,0 +1,45 @@
+# Frozen fixtures + expected score bands for `eval regress`.
+# Run after any change to a skill, rubric, judge model, or LM Studio update.
+fixtures:
+  - doc: fixtures/golden.md
+    skill: style-guide
+    min_score: 8
+    max_score: 10
+  - doc: fixtures/bad.md
+    skill: style-guide
+    min_score: 0
+    max_score: 4
+  - doc: fixtures/golden.md
+    skill: completeness
+    min_score: 8
+    max_score: 10
+  - doc: fixtures/bad.md
+    skill: completeness
+    min_score: 0
+    max_score: 5
+  - doc: fixtures/golden.md
+    skill: factuality
+    min_score: 8
+    max_score: 10
+    reference_facts:
+      - claim: venv module location
+        truth: The `venv` module ships with the Python 3 standard library; no separate install is needed.
+      - claim: creation command
+        truth: A virtual environment is created with `python3 -m venv <directory>`.
+      - claim: activation command
+        truth: On macOS/Linux the environment is activated with `source <directory>/bin/activate`.
+      - claim: isolation behavior
+        truth: Packages installed with pip inside an activated virtual environment do not affect the system Python installation.
+  - doc: fixtures/bad.md
+    skill: factuality
+    min_score: 0
+    max_score: 4
+    reference_facts:
+      - claim: venv module location
+        truth: The `venv` module ships with the Python 3 standard library; no separate install is needed.
+      - claim: creation command
+        truth: A virtual environment is created with `python3 -m venv <directory>`.
+      - claim: activation command
+        truth: On macOS/Linux the environment is activated with `source <directory>/bin/activate`.
+      - claim: isolation behavior
+        truth: Packages installed with pip inside an activated virtual environment do not affect the system Python installation.

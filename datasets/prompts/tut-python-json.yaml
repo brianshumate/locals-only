@@ -1,0 +1,21 @@
+id: tut-python-json
+title: Working with JSON in Python
+doc_type: tutorial
+audience: Beginner Python programmers comfortable with dictionaries and lists.
+source_material: |
+  Teach the standard-library `json` module: `json.dumps` / `json.loads` for
+  strings, `json.dump` / `json.load` for files, the `indent` parameter for
+  pretty-printing, and the mapping between JSON types and Python types
+  (object->dict, array->list, string->str, number->int/float, true/false->bool,
+  null->None). All examples must be self-contained and runnable.
+required_sections:
+  - Introduction
+  - Prerequisites
+  - Converting Python objects to JSON strings
+  - Parsing JSON strings
+  - Reading and writing JSON files
+  - Type mapping
+  - Summary
+target_length_words: 800
+requires_code: true
+code_languages: [python]

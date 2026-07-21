@@ -1,0 +1,12 @@
+prompt_id: con-hashing
+facts:
+  - claim: sha256 output size
+    truth: SHA-256 produces a 256-bit (32-byte) digest regardless of input size.
+  - claim: determinism
+    truth: A hash function is deterministic — the same input always yields the same digest.
+  - claim: md5 sha1 status
+    truth: MD5 and SHA-1 are broken with respect to collision resistance and must not be used for security purposes.
+  - claim: password hashing
+    truth: Passwords should be hashed with a slow, salted algorithm such as bcrypt, scrypt, or Argon2, not a fast general-purpose hash like plain SHA-256.
+  - claim: git usage
+    truth: Git addresses objects by their hash (content addressing).

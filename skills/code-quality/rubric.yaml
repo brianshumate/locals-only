@@ -1,0 +1,12 @@
+version: "1.0"
+description: Subjective half of code-example quality (runner covers execution).
+criteria:
+  - name: idiomatic
+    weight: 0.35
+    description: Code follows the language's conventions and standard-library idioms.
+  - name: minimal
+    weight: 0.3
+    description: Each example is the smallest code that demonstrates the point; no unrelated machinery.
+  - name: explained
+    weight: 0.35
+    description: Surrounding prose says what the code does and why; non-obvious lines are motivated.

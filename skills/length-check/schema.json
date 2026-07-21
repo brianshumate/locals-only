@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "score": {"type": "number", "minimum": 0, "maximum": 10},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "word_estimate": {"type": "integer", "minimum": 0},
+    "violations": {"type": "array"},
+    "summary": {"type": "string"}
+  },
+  "required": ["score", "confidence", "word_estimate", "violations", "summary"],
+  "additionalProperties": false
+}

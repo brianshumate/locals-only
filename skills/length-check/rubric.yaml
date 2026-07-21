@@ -1,0 +1,5 @@
+version: "1.0"
+description: Trivial smoke-test skill — estimates document length.
+criteria:
+  - name: length
+    weight: 1.0

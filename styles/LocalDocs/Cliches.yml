@@ -1,0 +1,11 @@
+extends: existence
+message: "Avoid filler phrase '%s'."
+level: warning
+ignorecase: true
+tokens:
+  - it's important to note
+  - it is worth noting
+  - simply
+  - just
+  - obviously
+  - of course

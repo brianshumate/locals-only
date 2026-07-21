@@ -1,0 +1,12 @@
+version: "1.0"
+description: Register, assumed knowledge, jargon vs the stated audience.
+criteria:
+  - name: assumed-knowledge
+    weight: 0.4
+    description: Concepts the audience cannot be assumed to know are explained; concepts they certainly know are not belabored.
+  - name: jargon
+    weight: 0.3
+    description: Technical terms are used accurately and defined on first use when the audience may not know them.
+  - name: register
+    weight: 0.3
+    description: Sentence complexity and pacing match the audience's expertise level.

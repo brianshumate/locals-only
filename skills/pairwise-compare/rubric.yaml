@@ -1,0 +1,6 @@
+version: "1.0"
+description: Overall A/B preference for Bradley-Terry ranking.
+criteria:
+  - name: overall
+    weight: 1.0
+    description: Better technical documentation overall.

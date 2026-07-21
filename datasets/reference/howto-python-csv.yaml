@@ -1,0 +1,12 @@
+prompt_id: howto-python-csv
+facts:
+  - claim: newline handling
+    truth: Files passed to the csv module should be opened with `newline=""` to avoid blank-line and quoting problems.
+  - claim: DictReader header
+    truth: "`csv.DictReader` uses the first row of the file as field names by default."
+  - claim: DictWriter header
+    truth: "`csv.DictWriter` requires a `fieldnames` argument, and `writeheader()` writes the header row."
+  - claim: delimiter parameter
+    truth: A custom delimiter is set with the `delimiter` keyword argument on readers and writers.
+  - claim: string values
+    truth: "`csv.reader` yields each row as a list of strings; numeric conversion is the caller's job."

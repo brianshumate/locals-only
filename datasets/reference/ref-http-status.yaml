@@ -1,0 +1,14 @@
+prompt_id: ref-http-status
+facts:
+  - claim: 201 meaning
+    truth: 201 Created indicates the request succeeded and a new resource was created.
+  - claim: 204 meaning
+    truth: 204 No Content indicates success with no response body.
+  - claim: 301 vs 302
+    truth: 301 Moved Permanently is a permanent redirect; 302 Found is a temporary redirect.
+  - claim: 401 vs 403
+    truth: 401 Unauthorized means the request lacks valid authentication credentials; 403 Forbidden means the server understood the credentials but refuses to authorize the request.
+  - claim: 429 meaning
+    truth: 429 Too Many Requests indicates the client has been rate limited.
+  - claim: 502 vs 504
+    truth: 502 Bad Gateway means an upstream server returned an invalid response; 504 Gateway Timeout means the upstream server did not respond in time.

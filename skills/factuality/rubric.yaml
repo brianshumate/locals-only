@@ -1,0 +1,10 @@
+version: "1.0"
+description: Checks document claims against datasets/reference/<prompt>.yaml.
+criteria:
+  - name: factual-accuracy
+    weight: 1.0
+    description: Agreement with reference facts; absence of confident errors.
+scoring:
+  contradicted_penalty: 3
+  extra_error_penalty: 2
+  unaddressed_penalty: 0.5

@@ -1,0 +1,12 @@
+prompt_id: ref-chmod
+facts:
+  - claim: octal digit values
+    truth: In octal notation, read=4, write=2, execute=1, and each digit is their sum.
+  - claim: digit order
+    truth: The three octal digits apply to user (owner), group, and other, in that order.
+  - claim: 755 expansion
+    truth: Mode 755 corresponds to rwxr-xr-x.
+  - claim: 644 expansion
+    truth: Mode 644 corresponds to rw-r--r--.
+  - claim: symbolic classes
+    truth: In symbolic notation, u=user/owner, g=group, o=other, a=all three.

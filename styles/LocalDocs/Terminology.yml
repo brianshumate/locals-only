@@ -1,0 +1,10 @@
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: error
+ignorecase: true
+swap:
+  utilize: use
+  in order to: to
+  via: through
+  e.g\.: for example
+  i\.e\.: that is

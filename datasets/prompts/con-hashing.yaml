@@ -1,0 +1,22 @@
+id: con-hashing
+title: What cryptographic hash functions are and why they matter
+doc_type: conceptual
+audience: Software developers with no security background.
+source_material: |
+  Explain the properties of a cryptographic hash function: deterministic,
+  fixed-size output (SHA-256 outputs 256 bits / 32 bytes), preimage
+  resistance, second-preimage resistance, collision resistance, avalanche
+  effect. Contrast with non-cryptographic hashes (hash tables). Cover common
+  uses: integrity verification, password storage (with salting — and why
+  fast hashes like plain SHA-256 are wrong for passwords; name bcrypt/argon2
+  as the right tool), content addressing (git). Mention MD5 and SHA-1 are
+  broken for collision resistance and should not be used for security.
+required_sections:
+  - Introduction
+  - Core properties
+  - Cryptographic vs non-cryptographic hashing
+  - Common applications
+  - What not to do
+  - Summary
+target_length_words: 900
+requires_code: false

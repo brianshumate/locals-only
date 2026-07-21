@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "score": {"type": "number", "minimum": 0, "maximum": 10},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fact_index": {"type": "integer", "minimum": 1},
+          "status": {"type": "string", "enum": ["supported", "contradicted", "unaddressed"]},
+          "evidence": {"type": "string"}
+        },
+        "required": ["fact_index", "status", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {"type": "string", "enum": ["minor", "major"]},
+          "rule": {"type": "string"},
+          "location": {"type": "string"},
+          "message": {"type": "string"}
+        },
+        "required": ["severity", "rule", "location", "message"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {"type": "string"}
+  },
+  "required": ["score", "confidence", "claims", "violations", "summary"],
+  "additionalProperties": false
+}

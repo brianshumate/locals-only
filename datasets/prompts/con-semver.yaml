@@ -1,0 +1,22 @@
+id: con-semver
+title: Understanding semantic versioning
+doc_type: conceptual
+audience: Developers who consume and publish libraries but treat version numbers as opaque.
+source_material: |
+  Explain SemVer (semver.org): MAJOR.MINOR.PATCH — MAJOR for incompatible
+  API changes, MINOR for backward-compatible feature additions, PATCH for
+  backward-compatible bug fixes. Pre-release identifiers (1.0.0-alpha.1,
+  hyphen-separated, lower precedence than the release), build metadata
+  (+sha.abc, ignored for precedence), and the special status of 0.x
+  versions (anything may change). Explain why this contract matters for
+  dependency ranges (caret ^1.2.3 allows >=1.2.3 <2.0.0 in npm-style
+  resolvers).
+required_sections:
+  - Introduction
+  - The three version numbers
+  - Pre-release versions and build metadata
+  - The 0.x escape hatch
+  - Version ranges in practice
+  - Summary
+target_length_words: 750
+requires_code: false

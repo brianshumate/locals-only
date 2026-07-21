@@ -1,0 +1,33 @@
+# Pipeline outputs
+runs/
+reports/*.html
+results.sqlite*
+logs/
+
+# Vendored Vale styles (fetched by scripts/doctor.sh)
+styles/Google/
+styles/.vale-config/
+
+# Scratch
+docs-tmp/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets / local overrides
+.env
+.env.*
+config/settings.local.yaml
+
+# Hostname pseudonymization key and its plaintext reverse map. Neither may be
+# published: together they undo the pseudonyms in runs/ and results.sqlite.
+.machine_secret
+.hostname-map.json
+
+# macOS
+.DS_Store

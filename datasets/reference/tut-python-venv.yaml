@@ -1,0 +1,12 @@
+prompt_id: tut-python-venv
+facts:
+  - claim: venv module location
+    truth: The `venv` module ships with the Python 3 standard library; no separate install is needed.
+  - claim: creation command
+    truth: A virtual environment is created with `python3 -m venv <directory>`.
+  - claim: activation command
+    truth: On macOS/Linux the environment is activated with `source <directory>/bin/activate`.
+  - claim: deactivation command
+    truth: Running `deactivate` returns the shell to the system Python.
+  - claim: isolation behavior
+    truth: Packages installed with pip inside an activated virtual environment do not affect the system Python installation.

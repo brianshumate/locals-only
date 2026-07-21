@@ -1,0 +1,20 @@
+id: tut-git-first-repo
+title: Your first Git repository
+doc_type: tutorial
+audience: Programmers who have written code but never used version control.
+source_material: |
+  Walk through initializing a repository (`git init`), checking status
+  (`git status`), staging (`git add`), committing (`git commit -m`), viewing
+  history (`git log`), and making a second commit after editing a file.
+  Explain the working tree / staging area / history model briefly.
+required_sections:
+  - Introduction
+  - Prerequisites
+  - Initializing a repository
+  - Making your first commit
+  - Making changes and committing again
+  - Viewing history
+  - Summary
+target_length_words: 900
+requires_code: true
+code_languages: [bash]

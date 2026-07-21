@@ -1,0 +1,9 @@
+extends: existence
+message: "Address the reader as 'you'; avoid first-person '%s'."
+level: warning
+ignorecase: true
+tokens:
+  - we recommend
+  - we suggest
+  - let us
+  - "let's"

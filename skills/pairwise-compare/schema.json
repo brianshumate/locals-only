@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "winner": {"type": "string", "enum": ["a", "b", "tie"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason": {"type": "string"}
+  },
+  "required": ["winner", "confidence", "reason"],
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+prompt_id: con-tcp-udp
+facts:
+  - claim: handshake
+    truth: TCP establishes a connection with a three-way handshake (SYN, SYN-ACK, ACK).
+  - claim: ordering
+    truth: TCP guarantees ordered, reliable delivery via sequence numbers and retransmission; UDP guarantees neither ordering nor delivery.
+  - claim: header size
+    truth: The UDP header is 8 bytes; the TCP header is at least 20 bytes.
+  - claim: connection model
+    truth: TCP is connection-oriented; UDP is connectionless.
+  - claim: DNS transport
+    truth: Ordinary DNS queries are typically carried over UDP.

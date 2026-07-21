@@ -1,0 +1,14 @@
+prompt_id: con-semver
+facts:
+  - claim: major semantics
+    truth: The MAJOR version increments on backward-incompatible API changes.
+  - claim: minor semantics
+    truth: The MINOR version increments when functionality is added in a backward-compatible manner.
+  - claim: patch semantics
+    truth: The PATCH version increments for backward-compatible bug fixes.
+  - claim: prerelease precedence
+    truth: A pre-release version (e.g. 1.0.0-alpha) has lower precedence than the corresponding release (1.0.0).
+  - claim: build metadata
+    truth: Build metadata (after +) is ignored when determining version precedence.
+  - claim: caret range
+    truth: In npm-style resolvers, ^1.2.3 allows versions >=1.2.3 and <2.0.0.

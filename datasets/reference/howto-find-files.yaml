@@ -1,0 +1,12 @@
+prompt_id: howto-find-files
+facts:
+  - claim: name test
+    truth: "`find <path> -name '<pattern>'` matches file names against a glob pattern; `-iname` is the case-insensitive variant."
+  - claim: type test
+    truth: "`-type f` matches regular files and `-type d` matches directories."
+  - claim: size test
+    truth: "`-size +10M` matches files larger than 10 megabytes."
+  - claim: mtime semantics
+    truth: "`-mtime -7` matches files modified within the last 7 days (i.e. less than 7 x 24 hours ago)."
+  - claim: exec placeholder
+    truth: "With `-exec cmd {} \\;`, `{}` is replaced by each matched path and the command runs once per match."

@@ -1,0 +1,12 @@
+version: "1.0"
+description: Required coverage — sections, prerequisites, sufficient steps.
+criteria:
+  - name: section-coverage
+    weight: 0.4
+    description: Every section the document type demands (intro, prerequisites, body, verification/summary) is present and substantive.
+  - name: prerequisites
+    weight: 0.3
+    description: Required tools, versions, permissions, and prior knowledge are stated before they are needed.
+  - name: step-sufficiency
+    weight: 0.3
+    description: A reader from the stated audience can follow the steps to a successful outcome without consulting other sources.
