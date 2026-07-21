@@ -757,3 +757,11 @@ then scale-out (25–30 prompts, temperature/quantization sweeps, WU-5.3).
 Backlog: Docker-isolated code execution, embedding similarity to reference
 docs, Elo over time, a cloud judge (Claude) as calibration anchor,
 doc-type-conditional leaderboards.
+
+## AI use disclaimer
+
+The author builds and manages this codebase with the support of coding agents.
+
+## License
+
+[BSD 2-Clause](LICENSE)
