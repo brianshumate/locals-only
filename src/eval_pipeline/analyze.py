@@ -15,7 +15,7 @@ except ImportError:  # analysis still usable without it
     _krippendorff = None
 
 from .config import Settings, load_settings
-from .db import Database
+from .db import Database, machine_label
 
 # Sentinel: no environment filtering — pool documents from every environment.
 ALL_ENVIRONMENTS = object()
@@ -30,12 +30,12 @@ def environment_groups(db: Database) -> list[tuple[int | None, str]]:
     weights themselves (mlx/qat vs gguf quants) differ across groups.
     """
     rows = db.query(
-        """SELECT e.id, e.hostname, e.os, e.arch, e.backend
+        """SELECT e.id, e.env_hash, e.os, e.arch, e.backend
            FROM environments e
            WHERE EXISTS (SELECT 1 FROM documents d WHERE d.environment_id = e.id)
-           ORDER BY e.hostname, e.backend""")
-    groups = [(r["id"],
-               f"{r['hostname']} · {r['os']}/{r['arch']} · {r['backend']}")
+           ORDER BY e.env_hash, e.backend""")
+    groups = [(r["id"], f"{machine_label(r['env_hash'])} · "
+                        f"{r['os']}/{r['arch']} · {r['backend']}")
               for r in rows]
     unrecorded = db.query(
         "SELECT COUNT(*) AS n FROM documents WHERE environment_id IS NULL")[0]["n"]
