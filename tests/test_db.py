@@ -211,12 +211,26 @@ def test_blank_environment_is_created_when_nothing_matches(db):
     assert len(db.query("SELECT * FROM environments")) == 1
 
 
-def test_real_version_change_forks_environment(db):
-    """A successful probe reporting a different version is a real backend
-    upgrade — deployments differ, so it keeps its own row and section."""
+def test_version_change_reuses_environment(db):
+    """Updating the backend (a new llama.cpp build, an LM Studio CLI bump) is
+    not a new machine. Forking on it split one host's results into a fresh
+    incomparable section after every routine upgrade, so the version is
+    display metadata and the row is reused."""
     e1 = db.upsert_environment(ENV)
     e2 = db.upsert_environment({**ENV, "backend_version": "b9999"})
-    assert e1 != e2
+    assert e1 == e2
+    rows = db.query("SELECT * FROM environments")
+    assert len(rows) == 1
+    assert rows[0]["backend_version"] == "b1234"  # first sighting is kept
+
+
+def test_blank_backend_version_is_backfilled(db):
+    """A row first registered from a failed version probe learns the version
+    once a later run reports one."""
+    env_id = db.upsert_environment({**ENV, "backend_version": ""})
+    assert db.upsert_environment(ENV) == env_id
+    assert db.query("SELECT backend_version FROM environments"
+                    )[0]["backend_version"] == "b1234"
 
 
 def test_document_records_environment(db):

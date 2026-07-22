@@ -28,6 +28,16 @@ class LMStudioError(RuntimeError):
     pass
 
 
+class LMStudioTimeout(LMStudioError):
+    """A chat request exceeded `request_timeout`.
+
+    Distinct from a malformed reply: the server does not cancel generation
+    when the client disconnects, so the model is still busy with the
+    abandoned request. Retrying only queues behind it and burns another
+    full timeout, which is why this is never retried.
+    """
+
+
 @dataclass
 class Usage:
     prompt_tokens: int = 0
@@ -70,10 +80,13 @@ def loaded_models() -> list[str]:
 
 
 def load_model(model: str, context_length: int | None = None,
-               timeout: float = 300) -> None:
+               timeout: float = 300, parallel: int = 1) -> None:
     args = ["load", model, "--yes"]
     if context_length:
         args += ["--context-length", str(context_length)]
+    # The pipeline issues one request at a time; LM Studio's default of 4
+    # parallel slots would allocate 4x the KV cache for no throughput gain.
+    args += ["--parallel", str(parallel)]
     _run_lms(*args, timeout=timeout)
 
 
@@ -110,6 +123,11 @@ class ModelClient:
                     )
                     resp.raise_for_status()
                     return resp.json()
+            except httpx.TimeoutException as e:
+                raise LMStudioTimeout(
+                    f"chat timed out after {self.settings.request_timeout}s "
+                    "(attempt 1, not retried — the server is still generating "
+                    "the abandoned request)") from e
             except (httpx.HTTPError, json.JSONDecodeError) as e:
                 last_err = e
                 log.warning("chat attempt %d failed: %s", attempt + 1, e)
@@ -204,7 +222,7 @@ def model_session(model: str, settings: LMStudioSettings | None = None,
         if current:
             unload_all()
         load_model(model, context_length=context_length,
-                   timeout=settings.load_timeout)
+                   timeout=settings.load_timeout, parallel=1)
     client = ModelClient(model=model, settings=settings, temperature=temperature,
                          max_tokens=max_tokens, seed=seed)
     try:

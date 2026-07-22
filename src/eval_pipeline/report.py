@@ -327,7 +327,7 @@ def _environments_html(db: Database) -> str:
            FROM environments e LEFT JOIN documents d ON d.environment_id = e.id
            GROUP BY e.id ORDER BY e.hostname, e.backend""")
     if not rows:
-        return ("<p class='note'>No environment records yet — documents "
+        return ("<p class='note'>No environment records yet; documents "
                 "generated before schema v3 predate environment capture.</p>")
     body = ""
     for r in rows:
@@ -340,7 +340,7 @@ def _environments_html(db: Database) -> str:
     note = ""
     if len(rows) > 1:
         note = ("<p class='note'>Documents come from more than one "
-                "environment — each has its own results section above; only "
+                "environment, each has its own results section above; only "
                 "same-environment numbers compare authors fairly.</p>")
     return ("<table><tr><th>Host</th><th>OS</th><th>Arch</th><th>CPU</th>"
             f"<th>GPU</th><th>Backend</th><th class='num'>Docs</th></tr>"
@@ -411,7 +411,7 @@ def _dashboard_html(db: Database) -> str:
     slots = _author_slots(db)
     pooled_rows, pooled_basis = _leaderboard_rows(db, slots=slots)
     if not pooled_rows:
-        return "<p>No authors in the database yet — run <code>eval generate</code>.</p>"
+        return "<p>No authors in the database yet; run <code>eval generate</code>.</p>"
 
     n_docs = sum(r["docs"] for r in pooled_rows)
     total_time = sum(r["total_time_s"] for r in pooled_rows)
@@ -439,7 +439,7 @@ def _dashboard_html(db: Database) -> str:
     if len(groups) <= 1:
         label = groups[0][1] if groups else "environment unrecorded"
         sections = _leaderboard_section(
-            pooled_rows, pooled_basis, f"Results — {label}",
+            pooled_rows, pooled_basis, f"Results: {label}",
             "All documents were authored in this environment.")
     else:
         sections = ""
@@ -449,14 +449,14 @@ def _dashboard_html(db: Database) -> str:
             if not rows:
                 continue
             sections += _leaderboard_section(
-                rows, basis, f"Results — {label}",
+                rows, basis, f"Results: {label}",
                 "Stats, ratings, and charts use only documents authored in "
                 "this environment, so authors compare on identical "
                 "hardware and backend.")
         sections += f"""
 <section style='margin-top:1.5rem'>
 <h2>All environments (pooled)</h2>
-<p class='note'>⚠ Pools every environment — speed columns mix hardware and
+<p class='note'>⚠ Pools every environment; speed columns mix hardware and
 cross-backend rows compare different deployments (quantizations) of a model.
 Use the per-environment sections above to compare authors fairly.
 Ranked by <strong>{pooled_basis}</strong>.</p>
@@ -507,7 +507,7 @@ def _bt_table(comps: list[tuple[str, str, str]]) -> str:
         for i, r in enumerate(ratings, 1))
     note = ""
     if len(ratings) >= 2 and ratings[0].ci_low <= ratings[1].ci_high:
-        note = "<p class='note'>⚠ Top-2 CIs overlap — no distinguishable winner.</p>"
+        note = "<p class='note'>⚠ Top-2 CIs overlap; no distinguishable winner.</p>"
     return ("<table><tr><th>#</th><th>Author</th><th>BT rating</th>"
             f"<th>95% CI</th><th>n</th></tr>{rows}</table>{note}")
 
@@ -531,7 +531,7 @@ def _leaderboard_html(db: Database) -> str:
     for label, env_comps in per_env:
         parts.append(f"<h3>{label}</h3>{_bt_table(env_comps)}")
     parts.append("<h3>All environments (pooled)</h3>"
-                 "<p class='note'>⚠ Mixes environments/backends — deployments "
+                 "<p class='note'>⚠ Mixes environments/backends; deployments "
                  "(quantization, hardware) differ; prefer the per-environment "
                  f"tables when comparing authors.</p>{_bt_table(comps)}")
     return "".join(parts)

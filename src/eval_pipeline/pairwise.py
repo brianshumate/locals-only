@@ -70,7 +70,8 @@ def compare_all(judge_ids: list[str] | None = None, force: bool = False,
         log.info("%s: %d comparisons to run", judge.id, len(work))
         with model_session(resolved.model, settings=settings,
                            temperature=judge.temperature,
-                           max_tokens=judge.max_tokens) as client:
+                           max_tokens=judge.max_tokens,
+                           context_length=judge.context_length) as client:
             for pid, doc_a, doc_b, swapped in work:
                 text_a = Path(doc_a.path).read_text()
                 text_b = Path(doc_b.path).read_text()

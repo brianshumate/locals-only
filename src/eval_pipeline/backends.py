@@ -55,7 +55,8 @@ class LMStudioBackend:
             if current:
                 lmstudio.unload_all()
             lmstudio.load_model(model, context_length=context_length,
-                                timeout=self.settings.load_timeout)
+                                timeout=self.settings.load_timeout,
+                                parallel=1)
 
     def release(self, model: str, keep_loaded: bool = False) -> None:
         if not keep_loaded:

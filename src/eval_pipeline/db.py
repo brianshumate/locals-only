@@ -275,52 +275,48 @@ class Database:
         """Register a generation environment; identical hardware + backend
         share one row. Returns the row id.
 
-        Identity is the *hardware/backend fingerprint* — os, arch, cpu, gpu,
-        backend and versions — and deliberately excludes the hostname. The
-        hostname is only a pseudonym (see ``envinfo.pseudonymize_hostname``)
-        that drifts when a box is renamed or a fresh checkout regenerates the
-        machine secret; keying identity on it forked a single physical
-        machine into several rows, and reports group per row, so the fork
-        split one host's results into incomparable sections. Hostname is kept
-        as display metadata only, recorded from the first sighting.
-
-        A backend whose version probe failed reports an empty
-        ``backend_version``. That is absence of knowledge, not a distinct
-        deployment, so it attaches to an otherwise-identical known
-        environment rather than forking a second row for the same machine.
+        Identity is the *hardware/backend fingerprint* — os, arch, cpu, gpu
+        and backend — and deliberately excludes both the hostname and the
+        backend version. The hostname is only a pseudonym (see
+        ``envinfo.pseudonymize_hostname``) that drifts when a box is renamed
+        or a fresh checkout regenerates the machine secret. The backend
+        version drifts every time the runtime is updated — an LM Studio CLI
+        bump is not a new machine. Keying identity on either forked a single
+        physical machine into several rows, and reports group per row, so the
+        fork split one host's results into incomparable sections. Both are
+        kept as display metadata only, recorded from the first sighting; a
+        blank one is backfilled once a run reports a value.
         """
-        hw_fields = ("os", "os_version", "arch", "cpu", "gpu",
-                     "backend", "backend_version")
-        canon = {k: str(env.get(k) or "") for k in ("hostname", *hw_fields)}
+        id_fields = ("os", "os_version", "arch", "cpu", "gpu", "backend")
+        meta_fields = ("hostname", "backend_version")
+        canon = {k: str(env.get(k) or "") for k in (*meta_fields, *id_fields)}
 
-        def match(fields: tuple[str, ...]):
-            return self.conn.execute(
-                "SELECT id FROM environments WHERE "
-                + " AND ".join(f"{f}=?" for f in fields)
-                + " ORDER BY id LIMIT 1",
-                tuple(canon[f] for f in fields),
-            ).fetchone()
-
-        # Same hardware + backend build => same environment, whatever the
-        # hostname pseudonym happens to be this run.
-        row = match(hw_fields)
+        row = self.conn.execute(
+            "SELECT id, " + ", ".join(meta_fields) + " FROM environments WHERE "
+            + " AND ".join(f"{f}=?" for f in id_fields)
+            + " ORDER BY id LIMIT 1",
+            tuple(canon[f] for f in id_fields),
+        ).fetchone()
         if row:
+            for field in meta_fields:
+                if canon[field] and not row[field]:
+                    self.conn.execute(
+                        f"UPDATE environments SET {field}=? WHERE id=?",
+                        (canon[field], row["id"]),
+                    )
+                    self.conn.commit()
             return row["id"]
-        # A blank version is absence of knowledge: attach to a known row that
-        # agrees on every hardware field except backend_version.
-        if not canon["backend_version"]:
-            row = match(tuple(f for f in hw_fields if f != "backend_version"))
-            if row:
-                return row["id"]
 
         env_hash = hashlib.sha256(
-            json.dumps({k: canon[k] for k in hw_fields}, sort_keys=True)
+            json.dumps({k: canon[k] for k in id_fields}, sort_keys=True)
             .encode()).hexdigest()[:16]
         cur = self.conn.execute(
             """INSERT INTO environments (env_hash, hostname, os, os_version,
                  arch, cpu, gpu, backend, backend_version)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (env_hash, *(canon[k] for k in ("hostname", *hw_fields))),
+            (env_hash, canon["hostname"], canon["os"], canon["os_version"],
+             canon["arch"], canon["cpu"], canon["gpu"], canon["backend"],
+             canon["backend_version"]),
         )
         self.conn.commit()
         return cur.lastrowid

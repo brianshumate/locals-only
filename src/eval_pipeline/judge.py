@@ -16,7 +16,7 @@ import jsonschema
 from .backends import model_session
 from .config import JudgeConfig, Settings, load_judges, load_settings
 from .db import Database
-from .lmstudio import LMStudioError, ModelClient
+from .lmstudio import LMStudioError, LMStudioTimeout, ModelClient
 from .prompts import load_reference
 from .skills import Skill, load_skill
 
@@ -48,6 +48,11 @@ def judge_document(client: ModelClient, skill: Skill, document: str,
             data, _ = client.chat_json(messages, schema=skill.schema)
             skill.validate_output(data)
             return data, time.monotonic() - start, ""
+        except LMStudioTimeout as e:
+            # Nothing to repair — the model never answered. Feeding back an
+            # "invalid output" correction would just cost another timeout.
+            log.warning("judge timed out: %s", e)
+            return None, time.monotonic() - start, str(e)
         except (LMStudioError, jsonschema.ValidationError) as e:
             error = str(e)
             log.warning("judge output invalid (attempt %d): %s", attempt + 1,
@@ -103,7 +108,8 @@ def judge_all(judge_ids: list[str] | None = None,
         log.info("%s: %d judgments to run", judge.id, total)
         with model_session(resolved.model, settings=settings,
                            temperature=judge.temperature,
-                           max_tokens=judge.max_tokens) as client:
+                           max_tokens=judge.max_tokens,
+                           context_length=judge.context_length) as client:
             for i, (doc, skill) in enumerate(work, 1):
                 text = Path(doc.path).read_text()
                 extra = _extra_context(skill.name, doc.prompt_id)

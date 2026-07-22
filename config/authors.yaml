@@ -42,6 +42,14 @@ authors:
   # ---------------------------------------------------------------------
   # LM Studio only — no gguf for these on the Linux server.
   # ---------------------------------------------------------------------
+  - id: gemma-4-31b-qat
+    model: google/gemma-4-31b-qat
+    quantization: qat
+    temperature: 0.7
+    seed: 42
+    max_tokens: 18500
+    context_length: 25000
+
   - id: gemma-4-12b
     model: google/gemma-4-12b-qat
     quantization: qat

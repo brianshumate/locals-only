@@ -72,12 +72,15 @@ def test_backfill_environments(seeded_db, tmp_path, monkeypatch):
                                            settings=settings)
     assert counts == {"from_manifest": 0, "assumed": 1, "skipped": 2}
 
-    hosts = {r["id"]: r["hostname"] for r in db.query(
-        """SELECT d.id, e.hostname FROM documents d
-           JOIN environments e ON e.id = d.environment_id""")}
-    assert hosts[doc_c] == "mac"     # exact, from the manifest
-    assert hosts[doc_d] == "mac2"    # assumed current machine
-    assert doc_a not in hosts and doc_b not in hosts
+    envs = {r["id"]: r for r in db.query(
+        """SELECT d.id, e.id AS env_id, e.hostname, e.backend_version
+           FROM documents d JOIN environments e ON e.id = d.environment_id""")}
+    # Manifest env and assumed-current env are the same hardware and backend,
+    # differing only in hostname pseudonym and probed version — one row.
+    assert envs[doc_c]["env_id"] == envs[doc_d]["env_id"]
+    assert envs[doc_c]["hostname"] == "mac"          # first sighting kept
+    assert envs[doc_c]["backend_version"] == "0.4"   # blank probe backfilled
+    assert doc_a not in envs and doc_b not in envs
 
     # the assumption is persisted to the manifest, and marked as such
     manifest = json.loads((d2 / "manifest.json").read_text())

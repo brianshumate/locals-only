@@ -74,6 +74,10 @@ class DiscoverySettings(BaseModel):
                                "pairwise-compare"]
     judge_temperature: float = 0.0
     judge_max_tokens: int = 32768
+    # Judges only ever see one document plus a rubric, so they need far less
+    # context than authors. Left unset the backend loads the model at its
+    # maximum context, which on Apple Silicon sizes the KV cache into swap.
+    judge_context_length: int = 16384
 
 
 class Settings(BaseModel):
@@ -165,6 +169,7 @@ class AuthorConfig(_ModelEntry):
 class JudgeConfig(_ModelEntry):
     temperature: float = 0.0
     max_tokens: int = 2048
+    context_length: int = 16384
     skills: list[str] = Field(default_factory=list)
 
 

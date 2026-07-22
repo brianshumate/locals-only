@@ -317,8 +317,12 @@ def render_entry(p: Proposal, cfg: DiscoverySettings) -> str:
         lines += ["    backends:", f"      {p.found.backend}:"]
         lines += _model_block(p.found, "        ", quant)
     if p.role == "judge":
+        ctx = cfg.judge_context_length
+        if p.found.context_length:
+            ctx = min(ctx, p.found.context_length)
         lines.append(f"    temperature: {cfg.judge_temperature}")
         lines.append(f"    max_tokens: {cfg.judge_max_tokens}")
+        lines.append(f"    context_length: {ctx}")
         lines.append(f"    skills: [{', '.join(cfg.judge_skills)}]")
     else:
         ctx = cfg.context_length

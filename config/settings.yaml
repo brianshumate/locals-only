@@ -62,3 +62,7 @@ discovery:
   judge_skills: [style-guide, factuality, completeness, audience-fit, code-quality, pairwise-compare]
   judge_temperature: 0.0
   judge_max_tokens: 32768
+  # Judges see one document (two for pairwise) plus a rubric — a few thousand
+  # tokens. Without this the backend loads at the model's max context and the
+  # KV cache alone pushes the Mac into swap.
+  judge_context_length: 16384
