@@ -14,8 +14,7 @@ from .analyze import (ALL_ENVIRONMENTS, _env_filter, author_judge_matrix,
                       effective_comparisons, environment_groups,
                       generation_stats, judge_agreement, score_aggregates)
 from .config import Settings, load_settings
-from .db import Database, machine_label
-from .envinfo import linux_kernel_version
+from .db import Database
 from .rank import bt_ratings
 
 PAGE = Template("""<!DOCTYPE html>
@@ -320,21 +319,13 @@ def _opt(v, fmt: str) -> str:
     return fmt.format(v) if v is not None else "—"
 
 
-def _os_label(os_name: str, os_version: str) -> str:
-    """Displayed OS string. Linux is reported as kernel only — never the distro."""
-    if os_name == "Linux":
-        kernel = linux_kernel_version(os_version)
-        return f"Linux {kernel}" if kernel else "Linux"
-    return f"{os_name} {os_version}".strip()
-
-
 def _environments_html(db: Database) -> str:
-    """Where the documents were generated: machine, OS, CPU/GPU, backend."""
+    """Where the documents were generated: host, OS, CPU/GPU, backend."""
     rows = db.query(
-        """SELECT e.env_hash, e.os, e.os_version, e.arch, e.cpu, e.gpu,
+        """SELECT e.hostname, e.os, e.os_version, e.arch, e.cpu, e.gpu,
                   e.backend, e.backend_version, COUNT(d.id) AS docs
            FROM environments e LEFT JOIN documents d ON d.environment_id = e.id
-           GROUP BY e.id ORDER BY e.env_hash, e.backend""")
+           GROUP BY e.id ORDER BY e.hostname, e.backend""")
     if not rows:
         return ("<p class='note'>No environment records yet — documents "
                 "generated before schema v3 predate environment capture.</p>")
@@ -342,9 +333,8 @@ def _environments_html(db: Database) -> str:
     for r in rows:
         backend = r["backend"] + (f" ({r['backend_version']})"
                                   if r["backend_version"] else "")
-        body += (f"<tr><td>{machine_label(r['env_hash'])}</td>"
-                 f"<td>{_os_label(r['os'], r['os_version'])}</td>"
-                 f"<td>{r['arch']}</td>"
+        body += (f"<tr><td>{r['hostname']}</td>"
+                 f"<td>{r['os']} {r['os_version']}</td><td>{r['arch']}</td>"
                  f"<td>{r['cpu'] or '—'}</td><td>{r['gpu'] or '—'}</td>"
                  f"<td>{backend}</td><td class='num'>{r['docs']}</td></tr>")
     note = ""
@@ -352,7 +342,7 @@ def _environments_html(db: Database) -> str:
         note = ("<p class='note'>Documents come from more than one "
                 "environment — each has its own results section above; only "
                 "same-environment numbers compare authors fairly.</p>")
-    return ("<table><tr><th>Machine</th><th>OS</th><th>Arch</th><th>CPU</th>"
+    return ("<table><tr><th>Host</th><th>OS</th><th>Arch</th><th>CPU</th>"
             f"<th>GPU</th><th>Backend</th><th class='num'>Docs</th></tr>"
             f"{body}</table>{note}")
 
@@ -449,7 +439,7 @@ def _dashboard_html(db: Database) -> str:
     if len(groups) <= 1:
         label = groups[0][1] if groups else "environment unrecorded"
         sections = _leaderboard_section(
-            pooled_rows, pooled_basis, f"Results: {label}",
+            pooled_rows, pooled_basis, f"Results — {label}",
             "All documents were authored in this environment.")
     else:
         sections = ""
@@ -459,7 +449,7 @@ def _dashboard_html(db: Database) -> str:
             if not rows:
                 continue
             sections += _leaderboard_section(
-                rows, basis, f"Results: {label}",
+                rows, basis, f"Results — {label}",
                 "Stats, ratings, and charts use only documents authored in "
                 "this environment, so authors compare on identical "
                 "hardware and backend.")
@@ -656,7 +646,7 @@ def write_reports(settings: Settings | None = None) -> list[str]:
     settings.reports_path.mkdir(exist_ok=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     pages = {
-        "dashboard.html": ("Locals Only eval dashboard", _dashboard_html(db)),
+        "dashboard.html": ("Eval dashboard", _dashboard_html(db)),
         "leaderboard.html": ("Leaderboard (Bradley–Terry)", _leaderboard_html(db)),
         "matrix.html": ("Author × Judge matrix", _matrix_html(db)),
         "criteria.html": ("Per-criterion breakdown", _criteria_html(db)),

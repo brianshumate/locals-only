@@ -24,18 +24,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT
 
-SCHEMA_VERSION = 6
-
-# What makes two generation environments the same environment. Deliberately
-# *excludes* hostname: a host's name is not a property of the machine. It
-# moves with DHCP, differs inside containers, and — because we only ever store
-# it pseudonymized — changes outright whenever the local HMAC key is
-# regenerated. Keying identity on it split one box's results across two report
-# sections. Identity is now the machine and the deployment on it: OS, CPU,
-# GPU, and backend. Hostname is kept alongside as a provenance breadcrumb.
-IDENTITY_FIELDS = ("os", "os_version", "arch", "cpu", "gpu",
-                   "backend", "backend_version")
-ENV_FIELDS = ("hostname", *IDENTITY_FIELDS)
+SCHEMA_VERSION = 5
 
 ENVIRONMENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS environments (
@@ -69,69 +58,7 @@ MIGRATIONS: dict[int, list[str]] = {
     # new write sets created_at explicitly.
     5: ["ALTER TABLE judgments ADD COLUMN created_at TEXT",
         "ALTER TABLE comparisons ADD COLUMN created_at TEXT"],
-    # v6: environment identity drops hostname (see IDENTITY_FIELDS). Rows that
-    # only ever differed by hostname described one machine, so they are merged
-    # rather than left as parallel report sections.
-    6: [lambda conn: _merge_environments_by_identity(conn)],
 }
-
-
-def _merge_environments_by_identity(conn: sqlite3.Connection) -> None:
-    """Recompute env_hash without hostname, folding rows that collide.
-
-    Collisions are the whole point: pre-v6 the same box could hold several
-    rows, one per hostname it reported. The survivor is the lowest id, except
-    that a row with a known backend_version outranks one whose probe failed,
-    so merging never discards the more specific record.
-
-    Blank-backend_version rows fold into a matching known row, mirroring the
-    fallback in ``upsert_environment``. Pre-v6 that fallback could still leave
-    a stranded blank row behind — it only fires when the known row already
-    exists, so a blank written first stayed forever.
-    """
-    rows = [dict(r) for r in conn.execute(
-        "SELECT * FROM environments ORDER BY id")]
-    groups: dict[str, list[dict]] = {}
-    for row in rows:
-        groups.setdefault(environment_hash(row), []).append(row)
-
-    # Absorb each blank-version group into a known one that agrees on all the
-    # other identity fields, if exactly one such group exists. More than one
-    # and the blank is genuinely ambiguous — which deployment produced it is
-    # unknowable, so it stays its own row rather than being assigned a version
-    # it may not have run.
-    def without_version(row: dict) -> tuple:
-        return tuple(str(row.get(f) or "")
-                     for f in IDENTITY_FIELDS if f != "backend_version")
-
-    for env_hash, members in list(groups.items()):
-        if members[0]["backend_version"]:
-            continue
-        candidates = [h for h, m in groups.items()
-                      if h != env_hash and m[0]["backend_version"]
-                      and without_version(m[0]) == without_version(members[0])]
-        if len(candidates) == 1:
-            groups[candidates[0]].extend(members)
-            del groups[env_hash]
-
-    # env_hash is UNIQUE; park every row on a scratch value first so no
-    # intermediate state of the rewrite can collide with a row not yet moved.
-    for row in rows:
-        conn.execute("UPDATE environments SET env_hash=? WHERE id=?",
-                     (f"migrating-{row['id']}", row["id"]))
-
-    for env_hash, members in groups.items():
-        survivor = sorted(
-            members, key=lambda r: (not r["backend_version"], r["id"]))[0]
-        for other in members:
-            if other["id"] == survivor["id"]:
-                continue
-            conn.execute(
-                "UPDATE documents SET environment_id=? WHERE environment_id=?",
-                (survivor["id"], other["id"]))
-            conn.execute("DELETE FROM environments WHERE id=?", (other["id"],))
-        conn.execute("UPDATE environments SET env_hash=? WHERE id=?",
-                     (env_hash, survivor["id"]))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -257,23 +184,6 @@ def resolve_path(stored: str) -> Path:
     return p
 
 
-def environment_hash(env: dict) -> str:
-    """Stable identity for a generation environment (see IDENTITY_FIELDS)."""
-    canon = {k: str(env.get(k) or "") for k in IDENTITY_FIELDS}
-    return hashlib.sha256(
-        json.dumps(canon, sort_keys=True).encode()).hexdigest()[:16]
-
-
-def machine_label(env_hash: str) -> str:
-    """Short human-facing name for an environment row.
-
-    Derived from the identity hash rather than the hostname so reports never
-    carry a machine name — not even a pseudonymized one — and so the label
-    stays put when a host is renamed.
-    """
-    return f"env-{env_hash[:6]}"
-
-
 @dataclass
 class Document:
     id: int
@@ -314,13 +224,8 @@ class Database:
                 f"Database schema v{current} is newer than code v{SCHEMA_VERSION}"
             )
         for version in range(current + 1, SCHEMA_VERSION + 1):
-            for step in MIGRATIONS.get(version, []):
-                # Steps are SQL, or a callable for migrations that have to
-                # read a row before deciding what to write.
-                if callable(step):
-                    step(self.conn)
-                else:
-                    self.conn.execute(step)
+            for stmt in MIGRATIONS.get(version, []):
+                self.conn.execute(stmt)
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -367,42 +272,55 @@ class Database:
         self.conn.commit()
 
     def upsert_environment(self, env: dict) -> int:
-        """Register a generation environment; identical machines share one
-        row. Returns the row id.
+        """Register a generation environment; identical hardware + backend
+        share one row. Returns the row id.
 
-        Identity is ``IDENTITY_FIELDS`` — hostname is recorded but does not
-        participate, so the same box keeps one row across renames, container
-        restarts, and pseudonymization-key changes.
+        Identity is the *hardware/backend fingerprint* — os, arch, cpu, gpu,
+        backend and versions — and deliberately excludes the hostname. The
+        hostname is only a pseudonym (see ``envinfo.pseudonymize_hostname``)
+        that drifts when a box is renamed or a fresh checkout regenerates the
+        machine secret; keying identity on it forked a single physical
+        machine into several rows, and reports group per row, so the fork
+        split one host's results into incomparable sections. Hostname is kept
+        as display metadata only, recorded from the first sighting.
 
         A backend whose version probe failed reports an empty
         ``backend_version``. That is absence of knowledge, not a distinct
         deployment, so it attaches to an otherwise-identical known
-        environment rather than forking a second row for the same machine —
-        reports group per row, and the fork would split one host's results
-        into two incomparable sections.
+        environment rather than forking a second row for the same machine.
         """
-        canon = {k: str(env.get(k) or "") for k in ENV_FIELDS}
-        env_hash = environment_hash(canon)
-        row = self.conn.execute(
-            "SELECT id FROM environments WHERE env_hash=?", (env_hash,)
-        ).fetchone()
+        hw_fields = ("os", "os_version", "arch", "cpu", "gpu",
+                     "backend", "backend_version")
+        canon = {k: str(env.get(k) or "") for k in ("hostname", *hw_fields)}
+
+        def match(fields: tuple[str, ...]):
+            return self.conn.execute(
+                "SELECT id FROM environments WHERE "
+                + " AND ".join(f"{f}=?" for f in fields)
+                + " ORDER BY id LIMIT 1",
+                tuple(canon[f] for f in fields),
+            ).fetchone()
+
+        # Same hardware + backend build => same environment, whatever the
+        # hostname pseudonym happens to be this run.
+        row = match(hw_fields)
         if row:
             return row["id"]
+        # A blank version is absence of knowledge: attach to a known row that
+        # agrees on every hardware field except backend_version.
         if not canon["backend_version"]:
-            known = [f for f in IDENTITY_FIELDS if f != "backend_version"]
-            row = self.conn.execute(
-                "SELECT id FROM environments WHERE "
-                + " AND ".join(f"{f}=?" for f in known)
-                + " ORDER BY id LIMIT 1",
-                tuple(canon[f] for f in known),
-            ).fetchone()
+            row = match(tuple(f for f in hw_fields if f != "backend_version"))
             if row:
                 return row["id"]
+
+        env_hash = hashlib.sha256(
+            json.dumps({k: canon[k] for k in hw_fields}, sort_keys=True)
+            .encode()).hexdigest()[:16]
         cur = self.conn.execute(
             """INSERT INTO environments (env_hash, hostname, os, os_version,
                  arch, cpu, gpu, backend, backend_version)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (env_hash, *(canon[k] for k in ENV_FIELDS)),
+            (env_hash, *(canon[k] for k in ("hostname", *hw_fields))),
         )
         self.conn.commit()
         return cur.lastrowid

@@ -83,10 +83,7 @@ def test_environment_groups_include_unrecorded(seeded_db):
     db, env, *_ = _two_env_db(seeded_db)
     groups = environment_groups(db)
     assert [g[0] for g in groups] == [env, None]
-    assert "llamacpp" in groups[0][1] and "Linux/x86_64" in groups[0][1]
-    # Labels identify the machine by its identity hash, never by hostname.
-    assert "srv" not in groups[0][1]
-    assert groups[0][1].startswith("env-")
+    assert "srv" in groups[0][1] and "llamacpp" in groups[0][1]
 
 
 def test_generation_stats_env_filter(seeded_db):

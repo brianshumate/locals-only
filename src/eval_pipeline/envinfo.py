@@ -10,7 +10,6 @@ import hashlib
 import hmac
 import os
 import platform
-import re
 import secrets
 import socket
 import subprocess
@@ -84,27 +83,17 @@ def _os_info() -> tuple[str, str]:
     if system == "Darwin":
         return "macOS", platform.mac_ver()[0]
     if system == "Linux":
-        # Deliberately kernel-only: the distribution (/etc/os-release) narrows a
-        # box down far more than the kernel does, and reports are published.
-        return "Linux", platform.release()
+        pretty = ""
+        try:
+            for line in open("/etc/os-release"):
+                if line.startswith("PRETTY_NAME="):
+                    pretty = line.split("=", 1)[1].strip().strip('"')
+                    break
+        except OSError:
+            pass
+        version = f"{pretty} ({platform.release()})" if pretty else platform.release()
+        return "Linux", version
     return system, platform.release()
-
-
-_KERNEL_RE = re.compile(r"\b\d+(?:\.\d+)+")
-
-
-def linux_kernel_version(os_version: str) -> str:
-    """Kernel version out of a stored ``os_version``, dropping any distro name.
-
-    Records written before capture was narrowed hold ``"Pop!_OS 22.04 (6.5.0)"``
-    or similar, so the distro has to be stripped on the way out too. The build
-    suffix goes as well: ``-arch1``/``-generic`` name the distro just as plainly
-    as the pretty name does, leaving only the numeric version.
-    """
-    inner = re.search(r"\(([^)]*)\)", os_version)
-    candidate = inner.group(1) if inner else os_version
-    match = _KERNEL_RE.search(candidate)
-    return match.group(0) if match else ""
 
 
 def _cpu_name() -> str:

@@ -180,8 +180,8 @@ def test_empty_backend_version_joins_known_environment(db):
 
 
 def test_empty_backend_version_still_distinguishes_machines(db):
-    """The empty-version fallback matches on the other identity fields, so it
-    never merges genuinely different hardware or backends."""
+    """The empty-version fallback matches on the remaining hardware fields, so
+    it never merges genuinely different hardware or backends."""
     db.upsert_environment(ENV)
     other_gpu = db.upsert_environment(
         {**ENV, "gpu": "RTX 4090 (24576 MiB)", "backend_version": ""})
@@ -191,78 +191,17 @@ def test_empty_backend_version_still_distinguishes_machines(db):
     assert len(db.query("SELECT * FROM environments")) == 3
 
 
-def test_hostname_does_not_fork_an_environment(db):
-    """A host renamed by DHCP, restarted in a fresh container, or issued a new
-    pseudonym is still the same machine. Forking on it split one box's results
-    into two incomparable report sections."""
-    first = db.upsert_environment(ENV)
-    renamed = db.upsert_environment({**ENV, "hostname": "yacht"})
-    assert renamed == first
-    assert len(db.query("SELECT * FROM environments")) == 1
-
-
-def test_migration_to_v6_merges_hostname_only_duplicates(db):
-    """Pre-v6 rows differing only by hostname described one machine; the
-    migration folds them and carries their documents onto the survivor."""
-    from eval_pipeline import db as db_mod
-
-    db.conn.execute("INSERT INTO authors VALUES ('a1','m1','q4',0.7,42,'{}')")
-    db.conn.execute("INSERT INTO prompts VALUES ('p1','tutorial','x','h','f')")
-    ids = []
-    for n, host in enumerate(("beast", "yacht", "kraken")):
-        row = {**ENV, "hostname": host}
-        # Bypass upsert: write the pre-v6 shape, where hostname was identity.
-        cur = db.conn.execute(
-            """INSERT INTO environments (env_hash, hostname, os, os_version,
-                 arch, cpu, gpu, backend, backend_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (f"legacy{n}", *(row[k] for k in db_mod.ENV_FIELDS)))
-        ids.append(cur.lastrowid)
-        db.conn.execute(
-            """INSERT INTO documents (prompt_id, author_id, path,
-                 content_hash, environment_id)
-               VALUES ('p1','a1',?,?,?)""",
-            (f"runs/{host}.md", f"h{n}", cur.lastrowid))
-    db.conn.commit()
-
-    db_mod._merge_environments_by_identity(db.conn)
-
-    envs = db.query("SELECT * FROM environments")
-    assert len(envs) == 1
-    assert envs[0]["id"] == ids[0]  # lowest id survives
-    assert envs[0]["env_hash"] == db_mod.environment_hash(ENV)
-    surviving = db.query(
-        "SELECT environment_id FROM documents")
-    assert {r["environment_id"] for r in surviving} == {ids[0]}
-    assert len(surviving) == 3  # no document lost in the merge
-
-
-def test_migration_to_v6_prefers_the_row_with_a_known_version(db):
-    """When a merge group mixes probed and unprobed rows, the specific record
-    survives even if it is not the lowest id."""
-    from eval_pipeline import db as db_mod
-
-    blank = db.conn.execute(
-        """INSERT INTO environments (env_hash, hostname, os, os_version,
-             arch, cpu, gpu, backend, backend_version)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("legacy0", *(({**ENV, "backend_version": ""})[k]
-                      for k in db_mod.ENV_FIELDS))).lastrowid
-    known = db.conn.execute(
-        """INSERT INTO environments (env_hash, hostname, os, os_version,
-             arch, cpu, gpu, backend, backend_version)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("legacy1", *(({**ENV, "hostname": "yacht"})[k]
-                      for k in db_mod.ENV_FIELDS))).lastrowid
-    db.conn.commit()
-    assert blank < known
-
-    db_mod._merge_environments_by_identity(db.conn)
-
-    envs = db.query("SELECT * FROM environments")
-    assert len(envs) == 1
-    assert envs[0]["id"] == known
-    assert envs[0]["backend_version"] == "b1234"
+def test_hostname_drift_reuses_environment(db):
+    """The hostname pseudonym is display metadata, not identity: the same box
+    reporting a different pseudonym (renamed host, regenerated machine secret)
+    reuses its row instead of forking a second, incomparable report section.
+    The first-seen hostname is kept."""
+    original = db.upsert_environment(ENV)
+    drifted = db.upsert_environment({**ENV, "hostname": "renamed-box"})
+    assert drifted == original
+    rows = db.query("SELECT * FROM environments")
+    assert len(rows) == 1
+    assert rows[0]["hostname"] == "beast"
 
 
 def test_blank_environment_is_created_when_nothing_matches(db):
