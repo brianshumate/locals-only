@@ -213,6 +213,14 @@ stage there.
   the author's model is a self-judge; the dashboard reports the delta between
   self-scores and other-judge scores per author.
 
+- **Idempotency is keyed on prompt + author, not backend**: a document
+  satisfies the up-to-date check regardless of which machine authored it, so
+  a shared author id is generated once across the pair rather than once per
+  backend. That is the right behaviour when both backends load the same
+  weights and the wrong one when they do not.
+  
+  [Run one model on both machines](#run-a-model-on-both-machines).
+
 - **Versioning**: Judgments store the skill version (from `rubric.yaml`).
   Editing a rubric bumps the version, and old scores never mix with new ones.
   Editing a prompt changes its hash, which forces regeneration.
@@ -292,6 +300,62 @@ authors:
 Entries do not have to be written by hand. `eval discover` proposes them from
 whatever the active backend can actually serve (see
 [Discovering new models](#discovering-new-models)).
+
+#### Run a model on both machines
+
+An author id owns exactly one output slot per prompt
+(`runs/<prompt>/<author>/output.md`), and the up-to-date check is
+backend-blind: it asks only whether that slot holds a document matching the
+current prompt hash, not which machine produced it. Whichever backend
+generates first therefore claims the slot, and the other reports
+`all prompts up to date, skipping model load` and never runs. Which layout you
+want depends on whether the two machines load the same weights.
+
+**Same weights file in both environments** with one shared id. The skip is the
+intended behaviour: it deduplicates work across the pair, and the document is
+equally valid whichever box authored it.
+
+```yaml
+  - id: granite-4.1-8b
+    model: granite-4.1-8b                  # LM Studio serving the gguf
+    quantization: Q8_0
+    backends:
+      llamacpp:
+        model: granite-4.1-8b-Q8_0.gguf    # the same file on the server
+        quantization: Q8
+```
+
+**Different weights** (mlx or qat on the Mac vs a gguf quant on the server,
+or different quant levels of the same gguf) — split into two ids, each pinned
+to one backend. Distinct ids mean distinct run directories, so neither machine
+can shadow the other, and the two deployments are scored as the separate
+things they are:
+
+```yaml
+  - id: granite-4.1-8b-mlx     # LM Studio only: no `backends: llamacpp:` key
+    model: granite-4.1-8b
+    quantization: mlx
+
+  - id: granite-4.1-8b-gguf    # llama.cpp only: no top-level `model:` key
+    backends:
+      llamacpp:
+        model: granite-4.1-8b-Q8_0.gguf
+        quantization: Q8
+```
+
+Suffix the id with whatever actually differs (`-mlx`/`-gguf`, `-qat`, a quant
+name) — the id is the unit of comparison everywhere downstream, so it should
+name the deployment, not just the model. `gemma-4-31b-qat` (LM Studio) and
+`gemma-4-31b` (llama.cpp) are the same split.
+
+Because rankings are computed within an environment, splitting costs nothing:
+each id is compared against the other authors on its own machine, and the
+dashboard's per-environment sections line the two up side by side.
+
+If you hit the skip on an id that should have been split, `eval generate
+--force` regenerates in place, but note that it **overwrites the other
+machine's document** in that slot. Splitting the id first and regenerating
+under the new name keeps both.
 
 ### Judge configuration
 
@@ -618,7 +682,7 @@ one is a deliberate call. Review the diff either way: ids and quantization
 labels are inferred from model names, and a 1-bit quant or a 4B model may not
 belong in the panel at all.
 
-### Running across both machines
+### Run across both machines
 
 One `results.sqlite` + `runs/` tree serves both boxes; document paths are
 stored repo-relative, so syncing them is enough:
@@ -644,6 +708,13 @@ uv run eval report
 Stages are idempotent, so the order is flexible. Each machine only
 generates for authors that have a model on its backend, and judging/
 validation run wherever the documents happen to be.
+
+Idempotency spans the pair: an author id shared by both backends is generated
+on whichever machine runs first, and the second reports it as up to date. Give
+each deployment its own id when the two machines load different weights.
+
+Review [Run a model on both machines](#run-a-model-on-both-machines)
+to learn more.
 
 Documents that predate environment capture (schema < v3) land in an
 "unrecorded environment" bucket. `eval backfill-env` attributes them: it
@@ -700,90 +771,154 @@ A complete walk-through (shown on the Mac/LM Studio backend. On the Linux
 server the flow is identical minus the `lms server start`, since the
 pipeline manages the llama.cpp container itself), from clean checkout to
 leaderboard. Model-load times dominate; the full author × 10-prompt matrix
-is an unattended multi-hour run, so start small:
+is an unattended multi-hour run, so start small.
+
+### Prepare the environment
+
+1. (optional) If you are running on Mac with LM Studio, start its server.
+
+  ```shell
+  $ lms server start --port 1234
+  ```
+
+1. Check that the environment is good to go.
+
+  ```shell
+  bash ./scripts/doctor.sh
+  ```
+
+1. Run the test suite.
+  
+  ```shell
+  $ uv run pytest -m "not integration"       # 36 passed
+  ```
+
+### Start the workflow
+
+1. Generate one document with the smallest author
 
 ```shell
-# 0. Environment
-$ lms server start --port 1234 && ./scripts/doctor.sh
-$ uv run pytest -m "not integration"       # 36 passed
-
-# 1. Generate one document with the smallest author
 $ uv run eval generate --authors lfm2.5-8b --prompts tut-python-json
 ... INFO eval_pipeline.generate: lfm2.5-8b: generating 1 document(s)
 ... INFO eval_pipeline.generate: tut-python-json/lfm2.5-8b done in 50.3s (3042 tokens)
 Generated 1 document(s).
+```
 
-# The artifact and its provenance:
-$ ls runs/tut-python-json/lfm2.5-8b/
-manifest.json  output.md
-$ cat runs/tut-python-json/lfm2.5-8b/manifest.json
-{
-  "prompt_id": "tut-python-json",
-  "author_id": "lfm2.5-8b",
-  "model": "lfm2.5-8b-a1b-mlx",
-  "backend": "lmstudio",
-  "environment": {
-    "hostname": "…", "os": "macOS", "os_version": "…",
-    "arch": "arm64", "cpu": "Apple M5", "gpu": "Apple M5 GPU (unified memory)",
-    "backend": "lmstudio", "backend_version": "…"
-  },
-  "temperature": 0.7,
-  "seed": 42,
-  "prompt_hash": "…",
-  "content_hash": "…",
-  "gen_time_s": 50.32,
-  "prompt_tokens": 267,
-  "completion_tokens": 3042,
-  ...
-}
+1. Check out the artifact and its provenance.
 
-# Idempotency: re-running is a no-op (hash-matched)
+  ```shell
+  $ ls runs/tut-python-json/lfm2.5-8b/
+  manifest.json  output.md
+  ```
+  
+  ```shell
+  $ cat runs/tut-python-json/lfm2.5-8b/manifest.json
+  {
+    "prompt_id": "tut-python-json",
+    "author_id": "lfm2.5-8b",
+    "model": "lfm2.5-8b-a1b-mlx",
+    "backend": "lmstudio",
+    "environment": {
+      "hostname": "…", "os": "macOS", "os_version": "…",
+      "arch": "arm64", "cpu": "Apple M5", "gpu": "Apple M5 GPU (unified memory)",
+      "backend": "lmstudio", "backend_version": "…"
+    },
+    "temperature": 0.7,
+    "seed": 42,
+    "prompt_hash": "…",
+    "content_hash": "…",
+    "gen_time_s": 50.32,
+    "prompt_tokens": 267,
+    "completion_tokens": 3042,
+    ...
+  }
+  ```
+
+Re-running is a idempotent no-op.
+
+```shell
 $ uv run eval generate --authors lfm2.5-8b --prompts tut-python-json
 ... lfm2.5-8b: all prompts up to date, skipping model load
 Generated 0 document(s).
-
-# 2. Deterministic validation (real output from this document):
-$ uv run eval validate
-Recorded 6 deterministic result(s).
-# per-tool rows now in det_results:
-#   markdownlint  passed=0  score=2.61   (heading/format violations)
-#   codespell     passed=1  score=10.0
-#   lychee        passed=1  score=10.0
-#   vale          passed=0  score=1.92   (style-guide violations)
-#   code-runner   passed=0  score=1.11   (most python blocks fail to execute!)
-#   readability   passed=1  score=14.23  (Flesch-Kincaid grade)
-
-# 3. LLM judging + pairwise comparisons (loads each judge model once):
-$ uv run eval judge
-$ uv run eval compare
-
-# 4. Analysis
-$ uv run eval analyze
-== Generation cost (per author) ==
-author           docs   time_s  prompt_tok  compl_tok   tok/s
-lfm2.5-8b           1     50.3         267       3042    60.4
-== Score aggregates (author x skill) ==
-...
-$ uv run eval rank
-== Bradley-Terry leaderboard ==
-rank  author            rating              95% CI     n
-...
-NOTE: top-2 confidence intervals overlap with no statistically
-distinguishable winner.        # ← it refuses to over-claim
-
-# 5. Reports
-$ uv run eval report
-wrote reports/dashboard.html   # ← open this one
-...
-
-# 6. Scale up to the full matrix (unattended, hours):
-$ uv run eval generate && uv run eval validate && uv run eval judge && uv run eval compare
-$ uv run eval report
-
-# 7. Guard rails
-$ uv run eval regress                        # judge drift check
-$ uv run eval calibrate sample --pct 10      # human anchor
 ```
+
+1. Run deterministic validation (real output from this document).
+
+  ```shell
+  $ uv run eval validate
+  Recorded 6 deterministic result(s).
+  # per-tool rows now in det_results:
+  #   markdownlint  passed=0  score=2.61   (heading/format violations)
+  #   codespell     passed=1  score=10.0
+  #   lychee        passed=1  score=10.0
+  #   vale          passed=0  score=1.92   (style-guide violations)
+  #   code-runner   passed=0  score=1.11   (most python blocks fail to execute!)
+  #   readability   passed=1  score=14.23  (Flesch-Kincaid grade)
+  ```
+
+1. Perform LLM judging + pairwise comparisons (loads each judge model once).
+
+  ```shell
+  $ uv run eval judge
+  ```
+
+1. Perform comparison.
+
+  ```shell
+  $ uv run eval compare
+  ```
+
+1. Run analysis.
+
+  ```shell
+  $ uv run eval analyze
+  == Generation cost (per author) ==
+  author           docs   time_s  prompt_tok  compl_tok   tok/s
+  lfm2.5-8b           1     50.3         267       3042    60.4
+  == Score aggregates (author x skill) ==
+  ...
+  ```
+
+1. Run ranking.
+
+  ```shell
+  $ uv run eval rank
+  == Bradley-Terry leaderboard ==
+  rank  author            rating              95% CI     n
+  ...
+  NOTE: top-2 confidence intervals overlap with no statistically
+  distinguishable winner.        # ← it refuses to over-claim
+  ```
+
+1. Run reports.
+
+  ```shell
+  $ uv run eval report
+  wrote reports/dashboard.html   # ← open this one
+  ...
+  ```
+
+1. Scale up to the full matrix (unattended, hours):
+
+  ```shell
+  $ uv run eval generate && \
+      uv run eval validate && \
+      uv run eval judge && \
+      uv run eval compare && \
+      uv run eval report
+  ```
+
+1. Check judge drift.
+
+  ```shell
+  $ uv run eval regress
+  ```
+
+1. Perform human calibraion.
+
+  ```shell
+  $ uv run eval calibrate sample --pct 10
+  ```
 
 Cost accounting for step 1, as recorded: 50.3 s wall clock, 267 prompt
 tokens, 3,042 completion tokens (60.4 tok/s) visible in `eval analyze`
@@ -806,13 +941,24 @@ and on the dashboard tiles.
 
 - **Model swaps recreate the container.** On llamacpp each model change is a
   `docker compose up -d --force-recreate` plus a gguf load into VRAM
-  (`--mlock --no-mmap`), which can take minutes from spinning storage, 
+  (`--mlock --no-mmap`), which can take minutes from spinning storage,
   hence `load_timeout: 900`. Anything else using the GPU or port 8080 will
   fight with it.
 
 - **Memory.** The big models need the machine to themselves (unified memory
   on the Mac, 24 GB VRAM on the 3090). The pipeline handles this
   (sequential load/swap), but don't run two stages in parallel.
+
+- **Never run two stages against one backend at once.** Both backends serve
+  exactly one model, so every stage unloads whatever else is loaded before
+  loading its own (`ensure_loaded`). Two concurrent `eval` processes therefore
+  evict each other's model mid-run: the loser's next request fails instantly
+  with `400 No models loaded` (lmstudio) and the stage reports a partial
+  result, since generation errors are logged per document rather than raised.
+  Documents already written stay valid — re-run the same command to fill in
+  the rest. If a stage fails this way with nothing else obviously running,
+  `~/.lmstudio/server-logs/<YYYY-MM>/` names the client that issued the
+  competing load.
 
 - **Code-runner sandbox** is best-effort: tempdir cwd/HOME, hard timeout, and
   proxy variables black-holed to block accidental network use. It is not a

@@ -9,6 +9,12 @@
 # cross-platform scores compare *deployments*, not identical weights — the
 # dashboard's environment table shows which machine authored what.
 #
+# One author id owns one `runs/<prompt>/<author>/` slot on whichever machine
+# generates first, so share an id across backends ONLY when both machines load
+# the same weights file. When the weights differ, give each deployment its own
+# id (`-mlx`/`-gguf`, or the quant name) pinned to a single backend — otherwise
+# the second machine sees the first machine's documents and skips.
+#
 # Grouped below by which environments can run each author:
 #   1. both backends   2. LM Studio only   3. llama.cpp only
 authors:
@@ -39,6 +45,19 @@ authors:
     max_tokens: 32768
     context_length: 65536
 
+  - id: granite-4.1-8b
+    model: granite-4.1-8b
+    quantization: Q8_0
+    backends:
+      llamacpp:
+        model: granite-4.1-8b-Q8_0.gguf
+        quantization: Q8
+    temperature: 0.7
+    seed: 42
+    # Reasoning model: budget covers the thinking phase plus the document.
+    max_tokens: 32768
+    context_length: 65536
+
   # ---------------------------------------------------------------------
   # LM Studio only — no gguf for these on the Linux server.
   # ---------------------------------------------------------------------
@@ -47,8 +66,8 @@ authors:
     quantization: qat
     temperature: 0.7
     seed: 42
-    max_tokens: 18500
-    context_length: 25000
+    max_tokens: 32768
+    context_length: 65536
 
   - id: gemma-4-12b
     model: google/gemma-4-12b-qat

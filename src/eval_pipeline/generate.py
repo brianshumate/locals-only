@@ -93,8 +93,28 @@ def generate_all(author_ids: list[str] | None = None,
                         "(add a `backends: %s:` entry in config/authors.yaml)",
                         author.id, backend.name, backend.name)
             continue
-        pending = [t for t in tasks
-                   if force or not _already_generated(db, settings, t, author)]
+        pending = []
+        foreign: dict[str, int] = {}
+        for t in tasks:
+            if force:
+                pending.append(t)
+                continue
+            existing = _already_generated(db, settings, t, author)
+            if existing is None:
+                pending.append(t)
+            elif existing != backend.name:
+                foreign[existing] = foreign.get(existing, 0) + 1
+        if foreign:
+            # A shared author id whose documents were authored elsewhere. They
+            # satisfy the up-to-date check, so this backend will never generate
+            # them without --force — correct when both backends load the same
+            # weights, silently wrong when they don't.
+            log.warning("%s: %d prompt(s) already satisfied by documents "
+                        "generated on %s, not %s — give each backend its own "
+                        "author id in config/authors.yaml if the weights "
+                        "differ, or use --force to regenerate here",
+                        author.id, sum(foreign.values()),
+                        "/".join(sorted(foreign)), backend.name)
         if not pending:
             log.info("%s: all prompts up to date, skipping model load", author.id)
             continue
@@ -174,20 +194,26 @@ def _out_dir(settings: Settings, task: PromptTask, author: AuthorConfig):
 
 
 def _already_generated(db: Database, settings: Settings, task: PromptTask,
-                       author: AuthorConfig) -> bool:
-    """Skip when output.md exists and its manifest matches the current prompt
-    hash (prompt edits force regeneration)."""
+                       author: AuthorConfig) -> str | None:
+    """The backend that authored this document, or None if it needs generating.
+
+    A document counts as up to date when output.md exists and its manifest
+    matches the current prompt hash (prompt edits force regeneration). The
+    check is deliberately backend-blind — one author id owns one output slot,
+    so a document authored on either machine satisfies it. Callers that care
+    which machine that was compare the returned backend name.
+    """
     out = _out_dir(settings, task, author)
     manifest_path = out / "manifest.json"
     output_path = out / "output.md"
     if not (manifest_path.exists() and output_path.exists()):
-        return False
+        return None
     try:
         manifest = json.loads(manifest_path.read_text())
     except json.JSONDecodeError:
-        return False
+        return None
     if manifest.get("prompt_hash") != task.prompt_hash():
-        return False
+        return None
     # Ensure the document is registered even if the DB was wiped, keeping the
     # environment it was originally generated in (recorded in the manifest).
     env = manifest.get("environment")
@@ -196,7 +222,7 @@ def _already_generated(db: Database, settings: Settings, task: PromptTask,
                          content_hash(output_path.read_text()),
                          manifest.get("gen_time_s"), manifest.get("completion_tokens"),
                          manifest.get("prompt_tokens"), environment_id=env_id)
-    return True
+    return manifest.get("backend") or "unknown"
 
 
 def _generate_one(db: Database, settings: Settings, client, author: AuthorConfig,

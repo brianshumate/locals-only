@@ -58,6 +58,25 @@ class TokenAccount:
         self.calls += 1
 
 
+def _with_response_body(e: Exception, limit: int = 500) -> Exception:
+    """Append the HTTP response body to an httpx status error.
+
+    `raise_for_status()` reports only the status line, but LM Studio puts the
+    actual reason (unloaded model, context overflow, bad payload field) in the
+    body — without it a 400 is indistinguishable from any other 400.
+    """
+    resp = getattr(e, "response", None)
+    if resp is None:
+        return e
+    try:
+        body = resp.text.strip()
+    except Exception:  # body already consumed or not decodable
+        return e
+    if not body:
+        return e
+    return type(e)(f"{e}: {body[:limit]}", request=e.request, response=resp)
+
+
 def _run_lms(*args: str, timeout: float = 300) -> str:
     cmd = ["lms", *args]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -129,8 +148,11 @@ class ModelClient:
                     "(attempt 1, not retried — the server is still generating "
                     "the abandoned request)") from e
             except (httpx.HTTPError, json.JSONDecodeError) as e:
-                last_err = e
-                log.warning("chat attempt %d failed: %s", attempt + 1, e)
+                # LM Studio explains 4xx in the response body ("model not
+                # loaded", context overflow, ...); the bare status line does
+                # not, so carry the body into the message.
+                last_err = _with_response_body(e)
+                log.warning("chat attempt %d failed: %s", attempt + 1, last_err)
                 time.sleep(2 ** attempt)
         raise LMStudioError(f"chat failed after retries: {last_err}")
 
