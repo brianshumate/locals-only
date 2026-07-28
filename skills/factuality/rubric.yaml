@@ -1,4 +1,4 @@
-version: "1.0"
+version: "1.1"
 description: Checks document claims against datasets/reference/<prompt>.yaml.
 criteria:
   - name: factual-accuracy

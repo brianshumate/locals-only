@@ -22,7 +22,7 @@
         "type": "object",
         "properties": {
           "severity": {"type": "string", "enum": ["minor", "major"]},
-          "rule": {"type": "string"},
+          "rule": {"type": "string", "enum": ["factual-error"]},
           "location": {"type": "string"},
           "message": {"type": "string"}
         },

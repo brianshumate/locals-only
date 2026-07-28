@@ -1,6 +1,18 @@
 {
   "type": "object",
   "properties": {
+    "criterion_scores": {
+      "type": "object",
+      "properties": {
+        "tone": {"type": "number", "minimum": 0, "maximum": 10},
+        "flow": {"type": "number", "minimum": 0, "maximum": 10},
+        "consistency": {"type": "number", "minimum": 0, "maximum": 10},
+        "voice-target": {"type": "number", "minimum": 0, "maximum": 10},
+        "register": {"type": "number", "minimum": 0, "maximum": 10}
+      },
+      "required": ["tone", "flow", "consistency", "voice-target", "register"],
+      "additionalProperties": false
+    },
     "score": {"type": "number", "minimum": 0, "maximum": 10},
     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
     "violations": {
@@ -9,7 +21,9 @@
         "type": "object",
         "properties": {
           "severity": {"type": "string", "enum": ["minor", "major"]},
-          "rule": {"type": "string"},
+          "rule": {"type": "string",
+                   "enum": ["tone", "flow", "consistency", "voice-target",
+                            "register"]},
           "location": {"type": "string"},
           "message": {"type": "string"}
         },
@@ -19,6 +33,7 @@
     },
     "summary": {"type": "string"}
   },
-  "required": ["score", "confidence", "violations", "summary"],
+  "required": ["criterion_scores", "score", "confidence", "violations",
+               "summary"],
   "additionalProperties": false
 }

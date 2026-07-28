@@ -68,6 +68,33 @@ def _judge_skills(judge, backend: str) -> list:
     return skills
 
 
+def _stale_versions(conn: sqlite3.Connection, backend: str) -> dict:
+    """{skill: ([stored versions that are not current], current version)}.
+
+    "Current" is the version in the rubric files on disk, because status
+    answers what work remains *now* — the same basis judge_all uses to decide
+    whether a judgment already exists.
+    """
+    stored: dict[str, set[str]] = {}
+    sql = "SELECT DISTINCT skill, skill_version FROM judgments"
+    # comparisons only carries skill_version from schema v6; on an older DB
+    # (status never migrates) pairwise rows simply go unreported here.
+    if _has_column(conn, "comparisons", "skill_version"):
+        sql += (" UNION SELECT DISTINCT skill, skill_version FROM comparisons")
+    for row in conn.execute(sql):
+        stored.setdefault(row["skill"], set()).add(row["skill_version"])
+    out = {}
+    for skill, versions in stored.items():
+        try:
+            current = load_skill(skill).version
+        except Exception:  # skill removed or broken; nothing to compare against
+            continue
+        superseded = sorted(versions - {current})
+        if superseded:
+            out[skill] = (superseded, current)
+    return out
+
+
 def _server_reachable(base_url: str) -> bool:
     try:
         with httpx.Client(timeout=3) as client:
@@ -122,6 +149,18 @@ def status_report(settings=None) -> str:
     lines.append("")
     lines.append(f"Documents: {ndocs}   Judgments recorded: {total} "
                  f"({failed} failed)")
+
+    # Results whose rubric version no longer matches the files on disk are
+    # excluded from analysis, so surface them here rather than letting the
+    # counts above imply the work is usable.
+    stale = _stale_versions(conn, backend)
+    if stale:
+        lines.append("")
+        lines.append("Superseded skill versions on disk (excluded from "
+                     "analysis; re-run to refill):")
+        for skill, (db_versions, current) in sorted(stale.items()):
+            lines.append(f"  {skill:14} stored {', '.join(db_versions)} "
+                         f"-> current {current}")
     lines.append("")
 
     # Per-judge progress against the work this backend implies.
@@ -134,12 +173,19 @@ def status_report(settings=None) -> str:
                          "or no runnable skills)")
             continue
         expected = len(skills) * ndocs
-        done = conn.execute(
-            "SELECT COUNT(*) c FROM judgments WHERE judge_id=? AND failed=0",
-            (judge.id,)).fetchone()["c"]
-        jfailed = conn.execute(
-            "SELECT COUNT(*) c FROM judgments WHERE judge_id=? AND failed=1",
-            (judge.id,)).fetchone()["c"]
+        # Counted per skill at the version currently on disk, matching what
+        # judge_all treats as already done. Pooling versions here would report
+        # a rubric bump as finished work and hide the pending re-run.
+        done = jfailed = 0
+        for skill in skills:
+            done += conn.execute(
+                "SELECT COUNT(*) c FROM judgments WHERE judge_id=? AND skill=? "
+                "AND skill_version=? AND failed=0",
+                (judge.id, skill.name, skill.version)).fetchone()["c"]
+            jfailed += conn.execute(
+                "SELECT COUNT(*) c FROM judgments WHERE judge_id=? AND skill=? "
+                "AND skill_version=? AND failed=1",
+                (judge.id, skill.name, skill.version)).fetchone()["c"]
         pending = max(expected - done, 0)
         pending_total += pending
         marker = "  <- current" if judge.id == current_judge and pending else ""
@@ -178,14 +224,15 @@ def status_report(settings=None) -> str:
         lines.append("")
         lines.append("Recent judgments:")
         for r in conn.execute(
-            "SELECT created_at, judge_id, skill, document_id, failed, latency_s "
-            "FROM judgments ORDER BY id DESC LIMIT 8"
+            "SELECT created_at, judge_id, skill, skill_version, document_id, "
+            "failed, latency_s FROM judgments ORDER BY id DESC LIMIT 8"
         ).fetchall():
             ok = "FAIL" if r["failed"] else "ok"
             lat = f"{r['latency_s']:.0f}s" if r["latency_s"] is not None else "-"
+            skill = f"{r['skill']}@{r['skill_version']}"
             lines.append(
                 f"  {r['created_at'] or '?':19}  {r['judge_id']:20} "
-                f"{r['skill']:14} doc#{r['document_id']:<4} {ok:4} {lat}")
+                f"{skill:20} doc#{r['document_id']:<4} {ok:4} {lat}")
 
     conn.close()
     return "\n".join(lines)

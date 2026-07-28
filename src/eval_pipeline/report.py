@@ -10,9 +10,10 @@ from jinja2 import Template
 
 import math
 
-from .analyze import (ALL_ENVIRONMENTS, _env_filter, author_judge_matrix,
-                      effective_comparisons, environment_groups,
-                      generation_stats, judge_agreement, score_aggregates)
+from .analyze import (ALL_ENVIRONMENTS, _env_filter, _version_filter,
+                      author_judge_matrix, effective_comparisons,
+                      environment_groups, generation_stats, judge_agreement,
+                      score_aggregates)
 from .config import Settings, load_settings
 from .db import Database
 from .rank import bt_ratings
@@ -245,11 +246,12 @@ def _leaderboard_rows(db: Database, environment_id=ALL_ENVIRONMENTS,
         authors = sorted(gen)  # only authors with documents in this environment
     models = {r["id"]: r["model"] for r in db.query("SELECT id, model FROM authors")}
 
+    vwhere, vargs = _version_filter(db, None, "j")
     judge_means = {r["author_id"]: r["m"] for r in db.query(
         f"""SELECT d.author_id, AVG(j.score) AS m FROM judgments j
            JOIN documents d ON d.id = j.document_id
-           WHERE j.failed=0 AND j.score IS NOT NULL{where}
-           GROUP BY d.author_id""", args)}
+           WHERE j.failed=0 AND j.score IS NOT NULL{where}{vwhere}
+           GROUP BY d.author_id""", args + vargs)}
     det_means = {r["author_id"]: r["m"] for r in db.query(
         f"""SELECT d.author_id, AVG(r.score) AS m FROM det_results r
            JOIN documents d ON d.id = r.document_id
@@ -347,6 +349,43 @@ def _environments_html(db: Database) -> str:
             f"{body}</table>{note}")
 
 
+def _skill_versions_html(db: Database) -> str:
+    """Which rubric version produced the numbers, and what was excluded.
+
+    Scores are only comparable within one rubric version, so every table in
+    this report is computed at the versions listed here.
+    """
+    versions = db.skill_versions()
+    if not versions:
+        return "<p class='note'>No judgments recorded yet.</p>"
+    stale = db.stale_skill_versions()
+    counts = {(r["skill"], r["skill_version"]): r["n"] for r in db.query(
+        """SELECT skill, skill_version, COUNT(*) AS n FROM judgments
+           WHERE failed=0 GROUP BY skill, skill_version
+           UNION ALL
+           SELECT skill, skill_version, COUNT(*) AS n FROM comparisons
+           GROUP BY skill, skill_version""")}
+    body = ""
+    for skill, all_versions in versions.items():
+        current = all_versions[-1]
+        superseded = ", ".join(stale.get(skill, [])) or "—"
+        body += (f"<tr><td>{skill}</td><td>{current}</td>"
+                 f"<td class='num'>{counts.get((skill, current), 0)}</td>"
+                 f"<td>{superseded}</td></tr>")
+    note = ""
+    if stale:
+        excluded = sum(n for (skill, version), n in counts.items()
+                       if version in stale.get(skill, []))
+        note = (f"<p class='note'>⚠ {excluded} result(s) from superseded rubric "
+                "versions are stored but excluded from every table above: a "
+                "rubric change alters what a score means, so pooling versions "
+                "would blend two different measurements. Re-run the affected "
+                "skills to refill at the current version.</p>")
+    return ("<table><tr><th>Skill</th><th>Version in use</th>"
+            "<th class='num'>Results</th><th>Superseded</th></tr>"
+            f"{body}</table>{note}")
+
+
 def _leaderboard_table(rows: list[dict]) -> str:
     header = ("<tr><th>#</th><th>Author</th><th>Model</th><th>Backend</th>"
               "<th class='num'>Rating</th><th class='num'>Judge score</th>"
@@ -416,9 +455,17 @@ def _dashboard_html(db: Database) -> str:
     n_docs = sum(r["docs"] for r in pooled_rows)
     total_time = sum(r["total_time_s"] for r in pooled_rows)
     total_tokens = sum(r["total_tokens"] for r in pooled_rows)
+    # Counted at the current rubric versions so the tiles match the tables
+    # below them; superseded rows still on disk are reported separately by
+    # _skill_versions_html.
+    jwhere, jargs = _version_filter(db, None, "j")
+    cwhere, cargs = _version_filter(db, None, "c")
     n_judgments = db.query(
-        "SELECT COUNT(*) AS n FROM judgments WHERE failed=0")[0]["n"]
-    n_comps = db.query("SELECT COUNT(*) AS n FROM comparisons")[0]["n"]
+        f"SELECT COUNT(*) AS n FROM judgments j WHERE j.failed=0{jwhere}",
+        jargs)[0]["n"]
+    n_comps = db.query(
+        f"SELECT COUNT(*) AS n FROM comparisons c WHERE 1=1{cwhere}",
+        cargs)[0]["n"]
 
     tiles = "".join(
         f"<div class='tile'><div class='v'>{v}</div><div class='k'>{k}</div></div>"
@@ -483,6 +530,11 @@ scale (1500 = field average); it appears once pairwise comparisons exist.</p>
 <h2>Generation environments</h2>
 <p class='sub'>machine, OS, and GPU each document was authored on</p>
 {_environments_html(db)}
+</div>
+<div class='card' style='margin-top:1rem'>
+<h2>Skill versions</h2>
+<p class='sub'>the rubric version behind every number in this report</p>
+{_skill_versions_html(db)}
 </div>
 </div>
 {DASH_JS}"""

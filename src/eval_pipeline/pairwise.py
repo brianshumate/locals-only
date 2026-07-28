@@ -60,19 +60,22 @@ def compare_all(judge_ids: list[str] | None = None, force: bool = False,
             for swapped in (False, True):
                 if not force and db.query(
                         """SELECT 1 FROM comparisons WHERE doc_a=? AND doc_b=?
-                           AND judge_id=? AND skill=? AND position_swapped=?""",
-                        (doc_a.id, doc_b.id, judge.id, SKILL_NAME, int(swapped))):
+                           AND judge_id=? AND skill=? AND skill_version=?
+                           AND position_swapped=?""",
+                        (doc_a.id, doc_b.id, judge.id, SKILL_NAME,
+                         skill.version, int(swapped))):
                     continue
                 work.append((pid, doc_a, doc_b, swapped))
         if not work:
             log.info("%s: no comparisons pending", judge.id)
             continue
-        log.info("%s: %d comparisons to run", judge.id, len(work))
+        total = len(work)
+        log.info("%s: %d comparisons to run", judge.id, total)
         with model_session(resolved.model, settings=settings,
                            temperature=judge.temperature,
                            max_tokens=judge.max_tokens,
                            context_length=judge.context_length) as client:
-            for pid, doc_a, doc_b, swapped in work:
+            for i, (pid, doc_a, doc_b, swapped) in enumerate(work, 1):
                 text_a = Path(doc_a.path).read_text()
                 text_b = Path(doc_b.path).read_text()
                 first, second = (text_b, text_a) if swapped else (text_a, text_b)
@@ -80,15 +83,19 @@ def compare_all(judge_ids: list[str] | None = None, force: bool = False,
                     client, skill, document="",  # unused by this skill
                     document_a=first, document_b=second)
                 if data is None:
-                    log.error("comparison failed %s %s/%s: %s", judge.id,
-                              doc_a.author_id, doc_b.author_id, error[:200])
+                    log.error("%s [%d/%d] %s/%s swapped=%d FAILED in %.1fs: %s",
+                              judge.id, i, total, doc_a.author_id,
+                              doc_b.author_id, int(swapped), latency, error[:120])
                     continue
                 winner = data["winner"]  # 'a'|'b'|'tie' in *presented* order
                 if swapped and winner in ("a", "b"):
                     winner = "b" if winner == "a" else "a"
                 db.record_comparison(pid, doc_a.id, doc_b.id, judge.id,
-                                     SKILL_NAME, winner, data.get("confidence"),
-                                     swapped, data)
+                                     SKILL_NAME, skill.version, winner,
+                                     data.get("confidence"), swapped, data)
+                log.info("%s [%d/%d] %s/%s swapped=%d winner=%s in %.1fs",
+                         judge.id, i, total, doc_a.author_id, doc_b.author_id,
+                         int(swapped), winner, latency)
                 count += 1
     db.close()
     return count

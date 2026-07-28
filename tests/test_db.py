@@ -53,16 +53,24 @@ def test_judgment_roundtrip(seeded_db):
 
 def test_comparison_roundtrip(seeded_db):
     db, doc_a, doc_b = seeded_db
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0",
                          "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0",
                          "a", 0.8, True)
     assert len(db.query("SELECT * FROM comparisons")) == 2
     # same key updates in place
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0",
                          "tie", 0.5, False)
     rows = db.query("SELECT * FROM comparisons WHERE position_swapped=0")
     assert len(rows) == 1 and rows[0]["winner"] == "tie"
+    # a rubric bump is a different measurement: it adds a row rather than
+    # overwriting the verdict recorded under the old version.
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.1",
+                         "b", 0.7, False)
+    rows = db.query("SELECT skill_version, winner FROM comparisons "
+                    "WHERE position_swapped=0 ORDER BY skill_version")
+    assert [(r["skill_version"], r["winner"]) for r in rows] == [
+        ("1.0", "tie"), ("1.1", "b")]
 
 
 def test_prompt_tokens_roundtrip(db):
@@ -79,6 +87,24 @@ _JUDGMENTS_CREATED_AT = (
 _COMPARISONS_CREATED_AT = (
     "    raw_json TEXT NOT NULL DEFAULT '{}',\n"
     "    created_at TEXT NOT NULL DEFAULT (datetime('now')),\n")
+
+
+_COMPARISONS_SKILL_VERSION = (
+    "    skill_version TEXT NOT NULL,\n"
+    "    winner TEXT NOT NULL CHECK (winner IN ('a', 'b', 'tie')),\n")
+
+
+def _strip_v6(schema: str) -> str:
+    """Drop the v6 comparisons.skill_version column and its uniqueness key.
+
+    Matched via the following line so the identically-named judgments column
+    (present since v1) is left intact."""
+    schema = schema.replace(
+        _COMPARISONS_SKILL_VERSION,
+        "    winner TEXT NOT NULL CHECK (winner IN ('a', 'b', 'tie')),\n")
+    return schema.replace(
+        "    UNIQUE (doc_a, doc_b, judge_id, skill, skill_version, position_swapped)",
+        "    UNIQUE (doc_a, doc_b, judge_id, skill, position_swapped)")
 
 
 def _strip_v5(schema: str) -> str:
@@ -323,6 +349,74 @@ def test_migration_from_v4_adds_created_at(tmp_path):
     # The pre-existing row predates the column, so it is NULL.
     assert upgraded.query("SELECT created_at FROM judgments")[0]["created_at"] is None
     upgraded.close()
+
+
+def test_migration_from_v5_versions_comparisons(tmp_path):
+    """v5 -> v6 adds comparisons.skill_version, preserving existing rows and
+    backfilling them to pairwise-compare 1.0."""
+    import sqlite3
+
+    from eval_pipeline import db as db_mod
+
+    path = tmp_path / "old.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(_strip_v6(db_mod.SCHEMA))
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '5')")
+    conn.execute("INSERT INTO authors VALUES ('a1','m1','q4',0.7,42,'{}')")
+    conn.execute("INSERT INTO judges VALUES ('j1','m1','{}')")
+    conn.execute("INSERT INTO prompts VALUES ('p1','tutorial','x','h','f')")
+    for h in ("h1", "h2"):
+        conn.execute("""INSERT INTO documents (prompt_id, author_id, path, content_hash)
+                        VALUES ('p1','a1',?,?)""", (f"{h}.md", h))
+    conn.execute("""INSERT INTO comparisons
+                    (prompt_id, doc_a, doc_b, judge_id, skill, winner,
+                     confidence, position_swapped)
+                    VALUES ('p1',1,2,'j1','pairwise-compare','a',0.9,0)""")
+    conn.commit()
+    conn.close()
+
+    upgraded = db_mod.Database(path)
+    rows = upgraded.query("SELECT * FROM comparisons")
+    assert len(rows) == 1
+    assert rows[0]["skill_version"] == "1.0"
+    assert rows[0]["winner"] == "a" and rows[0]["id"] == 1
+    # The rebuilt table carries the new uniqueness key, so a bumped rubric
+    # coexists with the migrated row instead of overwriting it.
+    upgraded.record_comparison("p1", 1, 2, "j1", "pairwise-compare", "1.1",
+                               "b", 0.5, False)
+    assert len(upgraded.query("SELECT * FROM comparisons")) == 2
+    assert upgraded.query(
+        "SELECT 1 FROM sqlite_master WHERE name='comparisons_v5'") == []
+    upgraded.close()
+
+
+def test_parse_version_orders_numerically():
+    from eval_pipeline.db import parse_version
+
+    assert parse_version("1.10") > parse_version("1.9")  # not string order
+    assert parse_version("2.0") > parse_version("1.99")
+    assert parse_version("1.0") < parse_version("1.0.1")
+    # Non-numeric components sort below real releases.
+    assert parse_version("draft") < parse_version("1.0")
+
+
+def test_skill_version_helpers(seeded_db):
+    db, doc_a, doc_b = seeded_db
+    db.record_judgment(doc_a, "judge-1", "style-guide", "1.0", 8.0, 0.9, [], {}, 1)
+    db.record_judgment(doc_a, "judge-1", "style-guide", "1.10", 6.0, 0.9, [], {}, 1)
+    db.record_judgment(doc_a, "judge-1", "style-guide", "1.9", 7.0, 0.9, [], {}, 1)
+    db.record_judgment(doc_a, "judge-1", "completeness", "1.0", 5.0, 0.9, [], {}, 1)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+                         "2.0", "a", 0.9, False)
+
+    assert db.skill_versions() == {
+        "completeness": ["1.0"],
+        "pairwise-compare": ["2.0"],
+        "style-guide": ["1.0", "1.9", "1.10"],  # numeric ordering
+    }
+    assert db.current_skill_versions() == {
+        "completeness": "1.0", "pairwise-compare": "2.0", "style-guide": "1.10"}
+    assert db.stale_skill_versions() == {"style-guide": ["1.0", "1.9"]}
 
 
 def test_record_judgment_sets_created_at(seeded_db):

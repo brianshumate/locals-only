@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 
-from eval_pipeline.analyze import (author_judge_matrix, bootstrap_ci,
-                                   effective_comparisons, environment_groups,
-                                   generation_stats, judge_agreement,
-                                   score_aggregates)
+from eval_pipeline.analyze import (ALL_SKILL_VERSIONS, author_judge_matrix,
+                                   bootstrap_ci, effective_comparisons,
+                                   environment_groups, generation_stats,
+                                   judge_agreement, score_aggregates)
 from eval_pipeline.rank import bt_ratings
 
 
@@ -44,10 +44,10 @@ def test_author_judge_matrix_and_self_delta(seeded_db):
 def test_judge_agreement_swap_consistency(seeded_db):
     db, doc_a, doc_b = seeded_db
     _seed_judgments(db, doc_a, doc_b)
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "a", 0.9, True)
-    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "b", 0.9, True)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0", "a", 0.9, True)
+    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "1.0", "b", 0.9, True)
     agree = judge_agreement(db)
     assert agree["swap_consistency"]["judge-1"] == 1.0
     assert agree["swap_consistency"]["judge-2"] == 0.0
@@ -56,10 +56,68 @@ def test_judge_agreement_swap_consistency(seeded_db):
 
 def test_effective_comparisons_disagreement_is_tie(seeded_db):
     db, doc_a, doc_b = seeded_db
-    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "b", 0.9, True)
+    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-2", "pairwise-compare", "1.0", "b", 0.9, True)
     comps = effective_comparisons(db)
     assert comps == [("author-a", "author-b", "tie")]
+
+
+def test_score_aggregates_excludes_superseded_versions(seeded_db):
+    """A rubric bump must not pool old and new scores: n stays at the new
+    version's count and the mean is the new rubric's, not a blend."""
+    db, doc_a, doc_b = seeded_db
+    db.record_judgment(doc_a, "judge-1", "style-guide", "1.0", 2.0, 0.9, [], {}, 1)
+    db.record_judgment(doc_a, "judge-2", "style-guide", "1.0", 2.0, 0.9, [], {}, 1)
+    db.record_judgment(doc_a, "judge-1", "style-guide", "1.1", 8.0, 0.9, [], {}, 1)
+
+    agg = {(a.author_id, a.skill): a for a in score_aggregates(db)}
+    current = agg[("author-a", "style-guide")]
+    assert current.n == 1 and current.mean == 8.0
+
+    pooled = {(a.author_id, a.skill): a
+              for a in score_aggregates(db, skill_versions=ALL_SKILL_VERSIONS)}
+    assert pooled[("author-a", "style-guide")].n == 3
+    # An explicit pin reaches the superseded results for auditing.
+    old = {(a.author_id, a.skill): a for a in
+           score_aggregates(db, skill_versions={"style-guide": "1.0"})}
+    assert old[("author-a", "style-guide")].mean == 2.0
+
+
+def test_alpha_table_is_not_clobbered_by_two_versions(seeded_db):
+    """Two versions per (judge, doc) would overwrite cells in the reliability
+    table, letting row order decide the alpha. Only one version may reach it."""
+    db, doc_a, doc_b = seeded_db
+    for doc, s1, s2 in [(doc_a, 9.0, 9.0), (doc_b, 3.0, 3.0)]:
+        db.record_judgment(doc, "judge-1", "style-guide", "1.0", s1, 0.9, [], {}, 1)
+        db.record_judgment(doc, "judge-2", "style-guide", "1.0", s2, 0.9, [], {}, 1)
+    # Perfectly-agreeing judges at 1.1; disagreement only exists across versions.
+    for doc, s in [(doc_a, 4.0), (doc_b, 8.0)]:
+        db.record_judgment(doc, "judge-1", "style-guide", "1.1", s, 0.9, [], {}, 1)
+        db.record_judgment(doc, "judge-2", "style-guide", "1.1", s, 0.9, [], {}, 1)
+
+    agree = judge_agreement(db)
+    assert agree["skill_versions"]["style-guide"] == "1.1"
+    # Judges agree exactly at 1.1, so deviation from the panel median is zero.
+    assert agree["judge_deviation"]["style-guide"]["judge-1"] == 0.0
+    assert agree["judge_deviation"]["style-guide"]["judge-2"] == 0.0
+
+
+def test_effective_comparisons_excludes_superseded_versions(seeded_db):
+    """A verdict from the old rubric must not outvote the current one."""
+    db, doc_a, doc_b = seeded_db
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+                         "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+                         "1.0", "a", 0.9, True)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+                         "1.1", "b", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare",
+                         "1.1", "b", 0.9, True)
+    assert effective_comparisons(db) == [("author-a", "author-b", "b")]
+    # Pooling would merge the two orderings across versions into one group.
+    pooled = effective_comparisons(db, skill_versions=ALL_SKILL_VERSIONS)
+    assert sorted(pooled) == [("author-a", "author-b", "a"),
+                              ("author-a", "author-b", "b")]
 
 
 def _two_env_db(seeded_db):
@@ -108,9 +166,9 @@ def test_score_aggregates_env_filter(seeded_db):
 def test_effective_comparisons_env_filter(seeded_db):
     db, env, doc_a, doc_b, doc_c, doc_d = _two_env_db(seeded_db)
     # same-env pair (recorded), same-env pair (unrecorded), cross-env pair
-    db.record_comparison("p1", doc_c, doc_d, "judge-1", "pairwise-compare", "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "b", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_d, "judge-1", "pairwise-compare", "a", 0.9, False)
+    db.record_comparison("p1", doc_c, doc_d, "judge-1", "pairwise-compare", "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0", "b", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_d, "judge-1", "pairwise-compare", "1.0", "a", 0.9, False)
     assert effective_comparisons(db, environment_id=env) == [
         ("author-a", "author-b", "a")]
     assert effective_comparisons(db, environment_id=None) == [

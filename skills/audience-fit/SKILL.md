@@ -16,7 +16,9 @@ Scoring:
 
 Return a JSON object with:
 - "score": 0–10
-- "confidence": 0–1
+- "confidence": 0–1 — how strongly the document supports this score. Use below
+  0.4 when the intended audience is never stated or implied, or the document is
+  too short to judge audience fit fairly.
 - "violations": array of {"severity": "minor"|"major", "rule": criterion name,
   "location": where, "message": the mismatch}
 - "summary": 1–2 sentences

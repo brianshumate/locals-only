@@ -9,7 +9,9 @@
         "type": "object",
         "properties": {
           "severity": {"type": "string", "enum": ["minor", "major"]},
-          "rule": {"type": "string"},
+          "rule": {"type": "string",
+                   "enum": ["section-coverage", "prerequisites",
+                            "step-sufficiency"]},
           "location": {"type": "string"},
           "message": {"type": "string"}
         },

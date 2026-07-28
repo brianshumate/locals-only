@@ -19,7 +19,8 @@ Scoring:
 
 Return a JSON object with:
 - "score": 0–10
-- "confidence": 0–1
+- "confidence": 0–1 — how strongly the document supports this score. Use below
+  0.4 when there are no code blocks, or too few to judge example quality fairly.
 - "violations": array of {"severity": "minor"|"major", "rule": criterion name,
   "location": which code block, "message": the issue}
 - "summary": 1–2 sentences

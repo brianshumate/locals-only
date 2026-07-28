@@ -1,17 +1,20 @@
-version: "1.0"
+version: "1.1"
 description: Subjective style qualities Vale cannot catch.
 criteria:
   - name: tone
-    weight: 0.25
+    weight: 0.2
     description: Professional, direct, helpful; no marketing fluff or apology.
   - name: flow
-    weight: 0.25
+    weight: 0.2
     description: Ideas progress logically; transitions are smooth; no abrupt jumps or repetition.
-  - name: voice-consistency
-    weight: 0.25
-    description: Consistent voice (second person, active) and consistent terminology throughout.
+  - name: consistency
+    weight: 0.2
+    description: Voice, person, and terminology stay constant throughout — whichever voice the document chose. Judge internal consistency only, not which voice it picked.
+  - name: voice-target
+    weight: 0.2
+    description: Prose addresses the reader in second person and prefers active voice, the house style for instructional documentation. Reference material that is deliberately impersonal is not penalized here.
   - name: register
-    weight: 0.25
+    weight: 0.2
     description: Formality level appropriate for technical documentation and constant across sections.
 severity:
   - "minor: noticeable but does not impede understanding"

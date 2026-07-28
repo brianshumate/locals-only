@@ -24,7 +24,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 ENVIRONMENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS environments (
@@ -58,6 +58,35 @@ MIGRATIONS: dict[int, list[str]] = {
     # new write sets created_at explicitly.
     5: ["ALTER TABLE judgments ADD COLUMN created_at TEXT",
         "ALTER TABLE comparisons ADD COLUMN created_at TEXT"],
+    # v6: comparisons gain skill_version, so a rubric change re-runs pairwise
+    # judging instead of overwriting the old verdicts in place (judgments have
+    # been versioned since v1). The column joins the uniqueness key, which
+    # sqlite cannot alter in place — hence the table rebuild. Existing rows
+    # predate any rubric bump, so they backfill to the only version that has
+    # ever produced them: pairwise-compare 1.0.
+    6: ["ALTER TABLE comparisons RENAME TO comparisons_v5",
+        """CREATE TABLE comparisons (
+    id INTEGER PRIMARY KEY,
+    prompt_id TEXT NOT NULL REFERENCES prompts(id),
+    doc_a INTEGER NOT NULL REFERENCES documents(id),
+    doc_b INTEGER NOT NULL REFERENCES documents(id),
+    judge_id TEXT NOT NULL REFERENCES judges(id),
+    skill TEXT NOT NULL,
+    skill_version TEXT NOT NULL,
+    winner TEXT NOT NULL CHECK (winner IN ('a', 'b', 'tie')),
+    confidence REAL,
+    position_swapped INTEGER NOT NULL DEFAULT 0,
+    raw_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (doc_a, doc_b, judge_id, skill, skill_version, position_swapped)
+)""",
+        """INSERT INTO comparisons (id, prompt_id, doc_a, doc_b, judge_id, skill,
+             skill_version, winner, confidence, position_swapped, raw_json,
+             created_at)
+           SELECT id, prompt_id, doc_a, doc_b, judge_id, skill, '1.0', winner,
+             confidence, position_swapped, raw_json, created_at
+           FROM comparisons_v5""",
+        "DROP TABLE comparisons_v5"],
 }
 
 SCHEMA = """
@@ -137,12 +166,13 @@ CREATE TABLE IF NOT EXISTS comparisons (
     doc_b INTEGER NOT NULL REFERENCES documents(id),
     judge_id TEXT NOT NULL REFERENCES judges(id),
     skill TEXT NOT NULL,
+    skill_version TEXT NOT NULL,
     winner TEXT NOT NULL CHECK (winner IN ('a', 'b', 'tie')),
     confidence REAL,
     position_swapped INTEGER NOT NULL DEFAULT 0,
     raw_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (doc_a, doc_b, judge_id, skill, position_swapped)
+    UNIQUE (doc_a, doc_b, judge_id, skill, skill_version, position_swapped)
 );
 
 CREATE TABLE IF NOT EXISTS human_scores (
@@ -155,6 +185,23 @@ CREATE TABLE IF NOT EXISTS human_scores (
     UNIQUE (document_id, reviewer, skill)
 );
 """
+
+
+def parse_version(version: str) -> tuple:
+    """Sort key for a skill version.
+
+    Dotted numeric components compare numerically, so 1.10 sorts above 1.9
+    (plain string comparison gets that backwards). Non-numeric components fall
+    back to string comparison, and sort below numeric ones so a hand-edited
+    "draft" never outranks a real release.
+    """
+    parts: list[tuple] = []
+    for component in str(version).split("."):
+        if component.isdigit():
+            parts.append((1, int(component), ""))
+        else:
+            parts.append((0, 0, component))
+    return tuple(parts)
 
 
 def to_stored_path(path: str | Path) -> str:
@@ -388,18 +435,21 @@ class Database:
         self.conn.commit()
 
     def record_comparison(self, prompt_id: str, doc_a: int, doc_b: int,
-                          judge_id: str, skill: str, winner: str,
-                          confidence: float | None, position_swapped: bool,
+                          judge_id: str, skill: str, skill_version: str,
+                          winner: str, confidence: float | None,
+                          position_swapped: bool,
                           raw: dict | None = None) -> None:
         self.conn.execute(
             """INSERT INTO comparisons (prompt_id, doc_a, doc_b, judge_id, skill,
-                 winner, confidence, position_swapped, raw_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(doc_a, doc_b, judge_id, skill, position_swapped)
+                 skill_version, winner, confidence, position_swapped, raw_json,
+                 created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(doc_a, doc_b, judge_id, skill, skill_version,
+                           position_swapped)
                DO UPDATE SET winner=excluded.winner, confidence=excluded.confidence,
                  raw_json=excluded.raw_json, created_at=excluded.created_at""",
-            (prompt_id, doc_a, doc_b, judge_id, skill, winner, confidence,
-             int(position_swapped), json.dumps(raw or {})),
+            (prompt_id, doc_a, doc_b, judge_id, skill, skill_version, winner,
+             confidence, int(position_swapped), json.dumps(raw or {})),
         )
         self.conn.commit()
 
@@ -441,3 +491,34 @@ class Database:
 
     def query(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
         return self.conn.execute(sql, args).fetchall()
+
+    # -- skill versions -----------------------------------------------------
+
+    def skill_versions(self) -> dict[str, list[str]]:
+        """{skill: [versions present in the DB, oldest first]}.
+
+        Spans judgments and comparisons, so pairwise skills appear too.
+        """
+        rows = self.conn.execute(
+            """SELECT DISTINCT skill, skill_version FROM judgments
+               UNION
+               SELECT DISTINCT skill, skill_version FROM comparisons""").fetchall()
+        out: dict[str, list[str]] = {}
+        for row in rows:
+            out.setdefault(row["skill"], []).append(row["skill_version"])
+        return {skill: sorted(versions, key=parse_version)
+                for skill, versions in sorted(out.items())}
+
+    def current_skill_versions(self) -> dict[str, str]:
+        """{skill: highest version present}. The default basis for analysis:
+        scores from different rubric versions are not comparable, so pooling
+        them would blend two different measurements into one mean."""
+        return {skill: versions[-1]
+                for skill, versions in self.skill_versions().items()}
+
+    def stale_skill_versions(self) -> dict[str, list[str]]:
+        """{skill: superseded versions still stored}. Non-empty means results
+        from an older rubric are on disk and excluded from analysis."""
+        return {skill: versions[:-1]
+                for skill, versions in self.skill_versions().items()
+                if len(versions) > 1}

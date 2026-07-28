@@ -9,7 +9,8 @@
         "type": "object",
         "properties": {
           "severity": {"type": "string", "enum": ["minor", "major"]},
-          "rule": {"type": "string"},
+          "rule": {"type": "string",
+                   "enum": ["idiomatic", "minimal", "explained"]},
           "location": {"type": "string"},
           "message": {"type": "string"}
         },

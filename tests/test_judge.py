@@ -22,7 +22,9 @@ class FakeClient:
         return r, None
 
 
-GOOD = {"score": 8.0, "confidence": 0.9, "violations": [], "summary": "fine"}
+GOOD = {"criterion_scores": {"tone": 8.0, "flow": 8.0, "consistency": 8.0,
+                             "voice-target": 8.0, "register": 8.0},
+        "score": 8.0, "confidence": 0.9, "violations": [], "summary": "fine"}
 
 
 def test_valid_first_try():

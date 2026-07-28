@@ -9,7 +9,8 @@ Rules:
 
 Return a JSON object with:
 - "winner": "a" | "b" | "tie"
-- "confidence": 0–1
+- "confidence": 0–1 — how clear the margin between the two documents is. Use
+  below 0.4 when they are close enough that the ranking could plausibly flip.
 - "reason": 1–2 sentences naming the decisive difference
 
 Document A:

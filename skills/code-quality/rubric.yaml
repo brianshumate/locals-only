@@ -1,4 +1,4 @@
-version: "1.0"
+version: "1.1"
 description: Subjective half of code-example quality (runner covers execution).
 criteria:
   - name: idiomatic

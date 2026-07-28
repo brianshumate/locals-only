@@ -18,8 +18,8 @@ def test_write_reports(seeded_db, tmp_path, monkeypatch):
     db.record_judgment(doc_a, "judge-1", "style-guide", "1.0", 9.0, 0.9, [], {}, 1)
     db.record_judgment(doc_b, "judge-1", "style-guide", "1.0", 4.0, 0.9, [], {}, 1)
     db.record_det_result(doc_a, "vale", True, 10.0, [])
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "a", 0.9, False)
-    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "a", 0.9, True)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0", "a", 0.9, False)
+    db.record_comparison("p1", doc_a, doc_b, "judge-1", "pairwise-compare", "1.0", "a", 0.9, True)
     db.close()
 
     from eval_pipeline.config import Settings

@@ -4,48 +4,53 @@
 
 # Locals Only
 
-An eval for **technical-writing quality** of local open-weight LLMs. Every
-author model writes the same documents from identical prompts; a battery of
-deterministic validators and LLM judges scores the results; rankings come from
-pairwise A/B comparisons aggregated with Bradley–Terry, calibrated against
-periodic human review.
+Locals Only is an eval for **technical-writing quality** of local
+open-weight LLMs.
 
-Everything runs locally, on either of two machines/backends:
+Every author model writes the same documents from identical prompts.
+Then a battery of deterministic validators and LLM judges scores the results.
+Rankings come from pairwise A/B comparisons aggregated with Bradley–Terry,
+calibrated against periodic human review.
 
-- **`lmstudio`**: [LM Studio](https://lmstudio.ai) (`lms` CLI +
+Everything runs locally in one of two distinct environments:
+
+- **macOS**: [LM Studio](https://lmstudio.ai) (`lms` CLI +
   OpenAI-compatible server) on the MacBook Air (M5, unified memory).
 
-- **`llamacpp`**: llama.cpp's `llama-server` in Docker (compose project in
-  `~/lcpp-docker`) on the Linux server (RTX 3090), serving gguf
-  files from `/mnt/data-one/llama-models`.
+- **Linux** [llama.cpp](https://llama.app/) `llama-server` in Docker
+  (Compose configuration in `~/lcpp-docker`) on the Linux server (RTX 3090),
+  serving gguf files from a volume mount.
 
-The backend is auto-detected per machine (macOS → `lmstudio`, Linux →
-`llamacpp`) and both expose the same OpenAI-compatible chat API, so every
-pipeline stage runs unchanged on either box. Every generation and judgment is
-stored on disk and in sqlite with full provenance (model, temperature, seed,
-prompt hash, skill version, **and the machine/OS/GPU/backend it ran on**), so
-runs are reproducible, auditable, and comparable across hardware.
+The backend is auto-detected per machine, and both expose the same  
+OpenAI-compatible chat API, so every pipeline stage runs unchanged in either
+environment. Every generation and judgment is stored on disk and in sqlite with
+full provenance (model, temperature, seed, prompt hash, skill version, **and
+the machine/OS/GPU/backend it ran on**), so runs are reproducible, auditable,
+and comparable across hardware.
 
 ## Design principles
 
-1. **Four independent concerns.** Author models → deterministic validators →
-   judge models → human calibration. Each evolves separately.
+1. Four independent and separately evolving concerns:
+    - Author models
+    - Deterministic validators
+    - Judge models
+    - Human calibration.
 
-1. **Skills are evaluation functions.** Each skill answers exactly one question
+1. Skills are evaluation functions: Each skill answers exactly one question
    (style, factuality, completeness, …) and must return strict JSON against a
    schema.
 
-1. **Deterministic first.** Anything objectively checkable (markdown validity,
+1. Deterministic first: Anything objectively checkable (markdown validity,
    links, spelling, code execution, readability) never goes to an LLM judge.
 
-1. **Never trust one judge.** Every subjective criterion is scored by ≥2 judge
+1. Never trust one judge: Every subjective criterion is scored by ≥2 judge
    models; the full author×judge matrix makes self-judging bias measurable.
 
-1. **Pairwise > absolute.** Absolute 0–10 scores feed diagnostics; rankings
+1. Pairwise > absolute: Absolute 0–10 scores feed diagnostics; rankings
    come from A/B comparisons (both orderings) fed to Bradley–Terry.
 
-1. **Everything on disk, reproducible.** Re-running any stage is idempotent;
-   `--force` regenerates.
+1. Everything on disk and reproducible: Re-running any stage is idempotent.
+   Use the `--force` flag to fully regenerate content, compare, judge or rank.
 
 ## Architecture
 
@@ -166,12 +171,12 @@ stage there.
 
 ### Key mechanics
 
-- **JSON discipline.** Judge calls use LM Studio structured output with the
+- **JSON discipline**: Judge calls use LM Studio structured output with the
   skill's `schema.json`; the reply is re-validated with `jsonschema`. Invalid
   output gets exactly one repair retry (the validation error is fed back);
   a second failure is stored with `failed=1` but never coerced.
 
-- **Model orchestration.** Neither machine can hold two large models at once
+- **Model orchestration**: Neither machine can hold two large models at once
   (unified memory on the Mac, a single RTX 3090 on the server), so
   `model_session()` serves exactly one model at a time and the pipeline
   batches *all* work for that model before switching (author-major
@@ -181,13 +186,13 @@ stage there.
   `context_length`) and waits for `/health`. If the requested model is
   already being served, the running server is reused.
 
-- **Backend selection.** `backend: auto` in `config/settings.yaml` picks
+- **Backend selection**: `backend: auto` in `config/settings.yaml` picks
   `lmstudio` on macOS and `llamacpp` elsewhere; override with
   `eval --backend lmstudio|llamacpp` or `EVAL_BACKEND=...`. Authors and
   judges declare per-backend model identities; entries with no model for the
   active backend are skipped on that machine with a warning.
 
-- **Environment provenance.** Every document records the environment it was
+- **Environment provenance**: Every document records the environment it was
   authored in (hostname, OS, CPU, GPU, backend + version) in its
   `manifest.json` and in the `environments` table and every results view
   (dashboard, `eval analyze`, `eval rank`, the leaderboard and criteria
@@ -199,22 +204,24 @@ stage there.
   identical weights, which is why only same-environment numbers compare
   authors fairly.
 
-- **Position-bias control.** Every pair is judged twice with A/B swapped.
+- **Position-bias control**: Every pair is judged twice with A/B swapped.
   Winners are normalized back to the canonical order; if the two orderings
   disagree, analysis counts the pair as a tie and the disagreement feeds the
   per-judge swap-consistency metric.
 
-- **Self-judging allowed but tracked.** A judge whose underlying model equals
+- **Self-judging allowed but tracked**: A judge whose underlying model equals
   the author's model is a self-judge; the dashboard reports the delta between
   self-scores and other-judge scores per author.
 
-- **Versioning.** Judgments store the skill version (from `rubric.yaml`).
+- **Versioning**: Judgments store the skill version (from `rubric.yaml`).
   Editing a rubric bumps the version, and old scores never mix with new ones.
   Editing a prompt changes its hash, which forces regeneration.
 
 ## Configuration
 
-### `config/settings.yaml`
+### General eval settings
+
+General eval settings live in `config/settings.yaml`. Here is an example:
 
 ```yaml
 backend: auto                          # lmstudio | llamacpp | auto
@@ -244,7 +251,9 @@ lychee:
   allowlist: []
 ```
 
-### `config/authors.yaml`
+### Author configuration
+
+Author configuration lives in `config/authors.yaml`. Here is an example:
 
 One entry per author configuration. Sweeps (temperature, quantization) are
 just additional rows with new ids; they become separate `authors` in the DB.
@@ -284,11 +293,15 @@ Entries do not have to be written by hand. `eval discover` proposes them from
 whatever the active backend can actually serve (see
 [Discovering new models](#discovering-new-models)).
 
-### `config/judges.yaml`
+### Judge configuration
+
+Judge configuration lives in `config/judges.yaml`.
 
 Judges run at temperature 0 in JSON mode. Every subjective skill should be
 listed under ≥2 judges (design principle 4). Backends work exactly as in
-authors.yaml. Keep ≥2 judges per skill available on *each* backend.
+`authors.yaml`.
+
+Keep ≥2 judges per skill available on *each* backend.
 
 ```yaml
 judges:
@@ -303,7 +316,11 @@ judges:
              code-quality, pairwise-compare]
 ```
 
-### Prompts (`datasets/prompts/<id>.yaml`)
+### Prompts
+
+Prompts live in `datasets/prompts/<id>.yaml`.
+
+Here is an example prompt structure:
 
 ```yaml
 id: tut-python-json
@@ -328,7 +345,9 @@ facts:
     truth: JSON `null` maps to Python `None`.
 ```
 
-### Skills (`skills/<name>/`)
+### Skills
+
+Skills live in `skills/<name>/`.
 
 A skill is one evaluator: `SKILL.md` (Jinja2 judge prompt), `rubric.yaml`
 (criteria, weights, **version**), `schema.json` (enforced output shape).
@@ -473,6 +492,63 @@ when needed:
 ```shell
 uv run eval --backend llamacpp generate     # Force the Docker backend
 EVAL_BACKEND=lmstudio uv run eval judge     # Environment variable works too
+```
+
+#### Common invocations
+
+A first run against a single author and prompt — the smallest useful slice of
+the matrix, and the fastest way to confirm the whole chain works:
+
+```shell
+uv run eval generate --authors gemma-4-31b --prompts tut-python-json && \
+    uv run eval validate && \
+    uv run eval judge && \
+    uv run eval compare && \
+    uv run eval analyze && \
+    uv run eval rank && \
+    uv run eval report
+```
+
+The later stages take no author/prompt filter: `validate`, `judge`, and
+`compare` pick up whatever is outstanding across the whole DB, and `analyze`,
+`rank`, and `report` always summarize everything scored so far.
+
+Re-run just the judging pass with one judge:
+
+```shell
+uv run eval judge --judges judge-gemma-4-12b
+```
+
+Forced authorship run, to renew documents whose inputs haven't changed
+(`generate` is hash-matched, so without `--force` it is a no-op):
+
+```shell
+uv run eval generate --authors qwen3.6-27b --force && \
+    uv run eval validate && \
+    uv run eval judge && \
+    uv run eval compare && \
+    uv run eval analyze && \
+    uv run eval rank && \
+    uv run eval report
+```
+
+Forced run with judging and comparisons re-run as well. This is the most
+time-consuming run and is rarely needed — reserve it for changes to a skill,
+rubric, or judge model. Note that `--force` here is not scoped by the
+`generate` filters: every judge re-scores *every* document in the DB and
+overwrites the existing rows:
+
+```shell
+uv run eval generate \
+    --authors nemotron-3-nano-omni-30b \
+    --prompts tut-python-json \
+    --force && \
+    uv run eval validate && \
+    uv run eval judge --force && \
+    uv run eval compare --force && \
+    uv run eval analyze && \
+    uv run eval rank && \
+    uv run eval report
 ```
 
 ### Discovering new models

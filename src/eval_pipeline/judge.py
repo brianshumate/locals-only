@@ -122,12 +122,13 @@ def judge_all(judge_ids: list[str] | None = None,
                                 judge.id, i, total, skill.name, doc.id, latency,
                                 error[:120])
                 else:
+                    score = skill.overall_score(data)
                     db.record_judgment(doc.id, judge.id, skill.name, skill.version,
-                                       data.get("score"), data.get("confidence"),
+                                       score, data.get("confidence"),
                                        data.get("violations", []), data, latency)
                     log.info("%s [%d/%d] %s doc#%d score=%s in %.1fs",
                              judge.id, i, total, skill.name, doc.id,
-                             data.get("score"), latency)
+                             score, latency)
                 count += 1
     db.close()
     return count

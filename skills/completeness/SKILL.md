@@ -15,7 +15,9 @@ Scoring:
 
 Return a JSON object with:
 - "score": 0–10
-- "confidence": 0–1
+- "confidence": 0–1 — how strongly the document supports this score. Use below
+  0.4 when the document's purpose is unclear, so what counts as complete cannot
+  be determined.
 - "violations": array of {"severity": "minor"|"major", "rule": criterion name,
   "location": section or area, "message": what is missing or insufficient}
 - "summary": 1–2 sentences

@@ -20,6 +20,10 @@ from .db import Database
 # Sentinel: no environment filtering — pool documents from every environment.
 ALL_ENVIRONMENTS = object()
 
+# Sentinel: no skill-version filtering — pool every rubric version on record.
+# Only meaningful for auditing old results; see _version_filter.
+ALL_SKILL_VERSIONS = object()
+
 
 def environment_groups(db: Database) -> list[tuple[int | None, str]]:
     """Environments documents were authored in, as (environment_id, label).
@@ -53,6 +57,31 @@ def _env_filter(environment_id, alias: str = "d") -> tuple[str, tuple]:
     if environment_id is ALL_ENVIRONMENTS:
         return "", ()
     return f" AND {alias}.environment_id IS ?", (environment_id,)
+
+
+def _version_filter(db: Database, skill_versions, alias: str) -> tuple[str, tuple]:
+    """SQL fragment pinning each skill (aliased) to a single rubric version.
+
+    A rubric bump changes what a score *means*: style-guide 1.1 scores five
+    criteria where 1.0 scored four. Both versions can sit in the same table, so
+    every query that averages, correlates, or ranks scores must restrict to one
+    version per skill or it will silently blend two measurements — inflating n,
+    narrowing CIs, and (in the alpha table) letting row order decide which
+    version wins a cell.
+
+    Defaults to the newest version of each skill. Pass ALL_SKILL_VERSIONS to
+    pool deliberately, or an explicit {skill: version} map to pin older results.
+    """
+    if skill_versions is ALL_SKILL_VERSIONS:
+        return "", ()
+    versions = (db.current_skill_versions() if skill_versions is None
+                else dict(skill_versions))
+    if not versions:
+        return "", ()
+    clauses = " OR ".join(
+        f"({alias}.skill = ? AND {alias}.skill_version = ?)" for _ in versions)
+    args = tuple(v for item in sorted(versions.items()) for v in item)
+    return f" AND ({clauses})", args
 
 
 @dataclass
@@ -112,12 +141,15 @@ def generation_stats(db: Database,
 
 
 def score_aggregates(db: Database,
-                     environment_id=ALL_ENVIRONMENTS) -> list[Aggregate]:
+                     environment_id=ALL_ENVIRONMENTS,
+                     skill_versions=None) -> list[Aggregate]:
     where, args = _env_filter(environment_id)
+    vwhere, vargs = _version_filter(db, skill_versions, "j")
     rows = db.query(
         f"""SELECT d.author_id, j.skill, j.score FROM judgments j
            JOIN documents d ON d.id = j.document_id
-           WHERE j.failed = 0 AND j.score IS NOT NULL{where}""", args)
+           WHERE j.failed = 0 AND j.score IS NOT NULL{where}{vwhere}""",
+        args + vargs)
     grouped: dict[tuple[str, str], list[float]] = {}
     for r in rows:
         grouped.setdefault((r["author_id"], r["skill"]), []).append(r["score"])
@@ -131,18 +163,20 @@ def score_aggregates(db: Database,
     return out
 
 
-def author_judge_matrix(db: Database, skill: str | None = None) -> dict:
+def author_judge_matrix(db: Database, skill: str | None = None,
+                        skill_versions=None) -> dict:
     """{author_id: {judge_id: mean_score}} plus self-judging deltas.
 
     A judge 'self-judges' when its underlying model equals the author's model.
     """
     where = "AND j.skill = ?" if skill else ""
     args = (skill,) if skill else ()
+    vwhere, vargs = _version_filter(db, skill_versions, "j")
     rows = db.query(
         f"""SELECT d.author_id, j.judge_id, AVG(j.score) AS mean_score
             FROM judgments j JOIN documents d ON d.id = j.document_id
-            WHERE j.failed = 0 AND j.score IS NOT NULL {where}
-            GROUP BY d.author_id, j.judge_id""", args)
+            WHERE j.failed = 0 AND j.score IS NOT NULL {where}{vwhere}
+            GROUP BY d.author_id, j.judge_id""", args + vargs)
     matrix: dict[str, dict[str, float]] = {}
     for r in rows:
         matrix.setdefault(r["author_id"], {})[r["judge_id"]] = round(r["mean_score"], 3)
@@ -160,17 +194,29 @@ def author_judge_matrix(db: Database, skill: str | None = None) -> dict:
     return {"matrix": matrix, "self_judging_delta": deltas}
 
 
-def judge_agreement(db: Database) -> dict:
+def judge_agreement(db: Database, skill_versions=None) -> dict:
     """Per-skill Krippendorff's alpha across judges + per-judge deviation from
-    the panel median + pairwise position-swap consistency per judge."""
-    out: dict = {"alpha": {}, "judge_deviation": {}, "swap_consistency": {}}
+    the panel median + pairwise position-swap consistency per judge.
+
+    `skill_versions` in the result records which rubric version each figure was
+    computed from — alpha is only interpretable against a fixed rubric.
+    """
+    out: dict = {"alpha": {}, "judge_deviation": {}, "swap_consistency": {},
+                 "skill_versions": {}}
+    vwhere, vargs = _version_filter(db, skill_versions, "j")
 
     skills = [r["skill"] for r in db.query(
-        "SELECT DISTINCT skill FROM judgments WHERE failed=0")]
+        f"""SELECT DISTINCT j.skill FROM judgments j
+            WHERE j.failed=0{vwhere}""", vargs)]
+    pinned = (None if skill_versions is ALL_SKILL_VERSIONS
+              else db.current_skill_versions() if skill_versions is None
+              else dict(skill_versions))
     for skill in skills:
+        out["skill_versions"][skill] = (pinned or {}).get(skill, "all")
         rows = db.query(
-            """SELECT document_id, judge_id, score FROM judgments
-               WHERE failed=0 AND score IS NOT NULL AND skill=?""", (skill,))
+            f"""SELECT j.document_id, j.judge_id, j.score FROM judgments j
+               WHERE j.failed=0 AND j.score IS NOT NULL AND j.skill=?{vwhere}""",
+            (skill,) + vargs)
         judges = sorted({r["judge_id"] for r in rows})
         docs = sorted({r["document_id"] for r in rows})
         if len(judges) < 2 or not docs:
@@ -193,12 +239,15 @@ def judge_agreement(db: Database) -> dict:
             out["judge_deviation"].setdefault(skill, {})[j] = round(float(dev), 3)
 
     # position-swap consistency: fraction of pairs where both orderings agree
+    cwhere, cargs = _version_filter(db, skill_versions, "c")
     rows = db.query(
-        """SELECT doc_a, doc_b, judge_id, skill,
-                  MAX(CASE WHEN position_swapped=0 THEN winner END) AS w0,
-                  MAX(CASE WHEN position_swapped=1 THEN winner END) AS w1
-           FROM comparisons GROUP BY doc_a, doc_b, judge_id, skill
-           HAVING w0 IS NOT NULL AND w1 IS NOT NULL""")
+        f"""SELECT c.doc_a, c.doc_b, c.judge_id, c.skill,
+                  MAX(CASE WHEN c.position_swapped=0 THEN c.winner END) AS w0,
+                  MAX(CASE WHEN c.position_swapped=1 THEN c.winner END) AS w1
+           FROM comparisons c
+           WHERE 1=1{cwhere}
+           GROUP BY c.doc_a, c.doc_b, c.skill, c.skill_version, c.judge_id
+           HAVING w0 IS NOT NULL AND w1 IS NOT NULL""", cargs)
     per_judge: dict[str, list[int]] = {}
     for r in rows:
         per_judge.setdefault(r["judge_id"], []).append(int(r["w0"] == r["w1"]))
@@ -208,7 +257,8 @@ def judge_agreement(db: Database) -> dict:
 
 
 def effective_comparisons(db: Database,
-                          environment_id=ALL_ENVIRONMENTS) -> list[tuple[str, str, str]]:
+                          environment_id=ALL_ENVIRONMENTS,
+                          skill_versions=None) -> list[tuple[str, str, str]]:
     """Resolve position-swapped duplicate comparisons into effective outcomes:
     (author_a, author_b, winner) where winner in {'a','b','tie'}.
     Disagreement across orderings -> tie.
@@ -217,17 +267,18 @@ def effective_comparisons(db: Database,
     that environment count — the basis for per-environment rankings."""
     where_a, args_a = _env_filter(environment_id, "da")
     where_b, args_b = _env_filter(environment_id, "db_")
+    vwhere, vargs = _version_filter(db, skill_versions, "c")
     rows = db.query(
         f"""SELECT c.doc_a, c.doc_b, c.judge_id, c.skill,
                   da.author_id AS author_a, db_.author_id AS author_b,
-                  MAX(CASE WHEN position_swapped=0 THEN winner END) AS w0,
-                  MAX(CASE WHEN position_swapped=1 THEN winner END) AS w1
+                  MAX(CASE WHEN c.position_swapped=0 THEN c.winner END) AS w0,
+                  MAX(CASE WHEN c.position_swapped=1 THEN c.winner END) AS w1
            FROM comparisons c
            JOIN documents da ON da.id = c.doc_a
            JOIN documents db_ ON db_.id = c.doc_b
-           WHERE 1=1{where_a}{where_b}
-           GROUP BY c.doc_a, c.doc_b, c.judge_id, c.skill""",
-        args_a + args_b)
+           WHERE 1=1{where_a}{where_b}{vwhere}
+           GROUP BY c.doc_a, c.doc_b, c.skill, c.skill_version, c.judge_id""",
+        args_a + args_b + vargs)
     out = []
     for r in rows:
         w0, w1 = r["w0"], r["w1"]

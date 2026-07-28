@@ -19,7 +19,9 @@ unaddressed fact that the document's topic clearly required. Floor at 0.
 
 Return a JSON object with:
 - "score": 0–10
-- "confidence": 0–1
+- "confidence": 0–1 — how strongly the document supports this score. Use below
+  0.4 when the reference list is empty, or the document is too vague for its
+  claims to be matched against the facts.
 - "claims": array of {"fact_index": 1-based index into the list above,
   "status": "supported"|"contradicted"|"unaddressed",
   "evidence": quote or location in the document, empty string if unaddressed}
