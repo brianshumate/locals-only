@@ -56,7 +56,7 @@ def _check_ids(kind: str, requested: list[str], known: list[str],
 def register_configs(db: Database, authors: list[AuthorConfig],
                      tasks: list[PromptTask]) -> None:
     for a in authors:
-        db.upsert_author(a.id, a.display_model(), a.quantization,
+        db.upsert_author(a.id, a.display_model(), a.display_quantization(),
                          a.temperature, a.seed, a.model_dump())
     for t in tasks:
         db.upsert_prompt(t.id, t.doc_type, t.audience, t.prompt_hash(),

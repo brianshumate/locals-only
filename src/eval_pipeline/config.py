@@ -15,6 +15,10 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 BACKEND_NAMES = ("lmstudio", "llamacpp")
 
 
+class DuplicateIdError(ValueError):
+    """Raised when a config file declares the same id more than once."""
+
+
 class LMStudioSettings(BaseModel):
     base_url: str = "http://localhost:1234/v1"
     request_timeout: float = 600
@@ -37,7 +41,7 @@ class LlamaCppSettings(BaseModel):
     # to enumerate gguf files; when it is absent (e.g. running on the Mac)
     # discovery falls back to listing the directory inside the container.
     host_model_dir: str = "/mnt/data-one/llama-models"
-    request_timeout: float = 1800
+    request_timeout: float = 4200
     load_timeout: float = 900
     retries: int = 2
 
@@ -165,6 +169,19 @@ class AuthorConfig(_ModelEntry):
     max_tokens: int = 4096
     context_length: int = 8192
 
+    def display_quantization(self) -> str:
+        """Quantization of the identity `display_model()` names.
+
+        Mirrors `display_model()`'s choice so the two always describe the same
+        deployment: a backends-only entry keeps its quantization beside the
+        model inside the backend block, where the top-level default never sees
+        it.
+        """
+        if self.model:
+            return self.quantization
+        entry = next(iter(self.backends.values()))
+        return entry.quantization or self.quantization
+
 
 class JudgeConfig(_ModelEntry):
     temperature: float = 0.0
@@ -197,13 +214,34 @@ def load_settings(path: Path | None = None) -> Settings:
     return Settings.model_validate(data)
 
 
+def _check_unique_ids(entries: list[_ModelEntry], path: Path) -> None:
+    """Duplicate ids silently collapse: every entry upserts the same DB row, so
+    the last one wins and the others' identities are lost. Fail loudly instead."""
+    seen: set[str] = set()
+    dupes: list[str] = []
+    for e in entries:
+        if e.id in seen and e.id not in dupes:
+            dupes.append(e.id)
+        seen.add(e.id)
+    if dupes:
+        raise DuplicateIdError(
+            f"{path}: duplicate id(s) {', '.join(repr(d) for d in dupes)} — "
+            "each entry needs its own id. When one model has a different "
+            "deployment per backend, give each its own id (`-mlx`/`-gguf`, or "
+            "the quant name) pinned to a single backend.")
+
+
 def load_authors(path: Path | None = None) -> list[AuthorConfig]:
     path = path or CONFIG_DIR / "authors.yaml"
     data = yaml.safe_load(path.read_text())
-    return [AuthorConfig.model_validate(a) for a in data["authors"]]
+    authors = [AuthorConfig.model_validate(a) for a in data["authors"]]
+    _check_unique_ids(authors, path)
+    return authors
 
 
 def load_judges(path: Path | None = None) -> list[JudgeConfig]:
     path = path or CONFIG_DIR / "judges.yaml"
     data = yaml.safe_load(path.read_text())
-    return [JudgeConfig.model_validate(j) for j in data["judges"]]
+    judges = [JudgeConfig.model_validate(j) for j in data["judges"]]
+    _check_unique_ids(judges, path)
+    return judges

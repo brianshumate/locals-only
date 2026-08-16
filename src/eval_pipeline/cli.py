@@ -14,7 +14,20 @@ def _split(value: str | None) -> list[str] | None:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
-@click.group()
+class _EvalGroup(click.Group):
+    """Config is loaded lazily inside each subcommand, so a malformed
+    authors/judges file surfaces after the group callback has returned.
+    Catch it here to report it once, as a CLI error rather than a traceback."""
+
+    def invoke(self, ctx: click.Context):
+        from .config import DuplicateIdError
+        try:
+            return super().invoke(ctx)
+        except DuplicateIdError as e:
+            raise click.UsageError(str(e)) from e
+
+
+@click.group(cls=_EvalGroup)
 @click.option("-v", "--verbose", is_flag=True)
 @click.option("--backend", type=click.Choice(["auto", "lmstudio", "llamacpp"]),
               default=None,

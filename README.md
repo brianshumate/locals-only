@@ -236,7 +236,7 @@ backend: auto                          # lmstudio | llamacpp | auto
                                        # (auto: macOS→lmstudio, else llamacpp)
 lmstudio:
   base_url: http://localhost:1234/v1   # doctor.sh checks this
-  request_timeout: 1800                # seconds per chat call (27B is slow)
+  request_timeout: 3600                # seconds per chat call (27B is slow)
   load_timeout: 300
   retries: 2
 llamacpp:
@@ -245,7 +245,7 @@ llamacpp:
   compose_service: llama
   container_model_dir: /models         # where the compose file mounts
                                        #   /mnt/data-one/llama-models
-  request_timeout: 1800
+  request_timeout: 3600
   load_timeout: 900                    # container start + gguf load → VRAM
   retries: 2
 database: results.sqlite
